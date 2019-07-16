@@ -12,17 +12,41 @@
  */
 package tech.pegasys.pantheon.ethereum.p2p.config;
 
+import static com.google.common.base.Preconditions.checkState;
+
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.SubProtocol;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 public class RlpxConfiguration {
+  public static final float DEFAULT_FRACTION_REMOTE_CONNECTIONS_ALLOWED = 0.6f;
   private String clientId = "TestClient/1.0.0";
   private String bindHost = "0.0.0.0";
   private int bindPort = 30303;
   private int maxPeers = 25;
-  private WireProtocolConfig wire = new WireProtocolConfig();
+  private boolean limitRemoteWireConnectionsEnabled = false;
+  private float fractionRemoteWireConnectionsAllowed = DEFAULT_FRACTION_REMOTE_CONNECTIONS_ALLOWED;
+  private List<SubProtocol> supportedProtocols = Collections.emptyList();
 
   public static RlpxConfiguration create() {
     return new RlpxConfiguration();
+  }
+
+  public RlpxConfiguration setSupportedProtocols(final SubProtocol... supportedProtocols) {
+    this.supportedProtocols = Arrays.asList(supportedProtocols);
+    return this;
+  }
+
+  public RlpxConfiguration setSupportedProtocols(final List<SubProtocol> supportedProtocols) {
+    this.supportedProtocols = supportedProtocols;
+    return this;
+  }
+
+  public List<SubProtocol> getSupportedProtocols() {
+    return supportedProtocols;
   }
 
   public String getBindHost() {
@@ -43,15 +67,6 @@ public class RlpxConfiguration {
     return this;
   }
 
-  public WireProtocolConfig getWire() {
-    return wire;
-  }
-
-  public RlpxConfiguration setWire(final WireProtocolConfig wire) {
-    this.wire = wire;
-    return this;
-  }
-
   public RlpxConfiguration setMaxPeers(final int peers) {
     maxPeers = peers;
     return this;
@@ -65,8 +80,32 @@ public class RlpxConfiguration {
     return clientId;
   }
 
-  public void setClientId(final String clientId) {
+  public RlpxConfiguration setClientId(final String clientId) {
     this.clientId = clientId;
+    return this;
+  }
+
+  public RlpxConfiguration setLimitRemoteWireConnectionsEnabled(
+      final boolean limitRemoteWireConnectionsEnabled) {
+    this.limitRemoteWireConnectionsEnabled = limitRemoteWireConnectionsEnabled;
+    return this;
+  }
+
+  public RlpxConfiguration setFractionRemoteWireConnectionsAllowed(
+      final float fractionRemoteWireConnectionsAllowed) {
+    checkState(
+        fractionRemoteWireConnectionsAllowed >= 0.0 && fractionRemoteWireConnectionsAllowed <= 1.0,
+        "Fraction of remote connections allowed must be between 0.0 and 1.0 (inclusive).");
+    this.fractionRemoteWireConnectionsAllowed = fractionRemoteWireConnectionsAllowed;
+    return this;
+  }
+
+  public int getMaxRemotelyInitiatedConnections() {
+    if (!limitRemoteWireConnectionsEnabled) {
+      return maxPeers;
+    }
+
+    return (int) Math.floor(maxPeers * fractionRemoteWireConnectionsAllowed);
   }
 
   @Override
@@ -78,14 +117,12 @@ public class RlpxConfiguration {
       return false;
     }
     final RlpxConfiguration that = (RlpxConfiguration) o;
-    return bindPort == that.bindPort
-        && Objects.equals(bindHost, that.bindHost)
-        && Objects.equals(wire, that.wire);
+    return bindPort == that.bindPort && Objects.equals(bindHost, that.bindHost);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(bindHost, bindPort, wire);
+    return Objects.hash(bindHost, bindPort);
   }
 
   @Override
@@ -93,7 +130,6 @@ public class RlpxConfiguration {
     final StringBuilder sb = new StringBuilder("RlpxConfiguration{");
     sb.append("bindHost='").append(bindHost).append('\'');
     sb.append(", bindPort=").append(bindPort);
-    sb.append(", wire=").append(wire);
     sb.append('}');
     return sb.toString();
   }

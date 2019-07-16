@@ -29,15 +29,14 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 import static tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator.TransactionInvalidReason.EXCEEDS_BLOCK_GAS_LIMIT;
+import static tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator.TransactionInvalidReason.GAS_PRICE_TOO_LOW;
 import static tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator.TransactionInvalidReason.NONCE_TOO_LOW;
-import static tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator.TransactionInvalidReason.TX_SENDER_NOT_AUTHORIZED;
 import static tech.pegasys.pantheon.ethereum.mainnet.ValidationResult.valid;
 
 import tech.pegasys.pantheon.crypto.SECP256K1.KeyPair;
 import tech.pegasys.pantheon.ethereum.ProtocolContext;
 import tech.pegasys.pantheon.ethereum.chain.MutableBlockchain;
 import tech.pegasys.pantheon.ethereum.core.Account;
-import tech.pegasys.pantheon.ethereum.core.AccountFilter;
 import tech.pegasys.pantheon.ethereum.core.Block;
 import tech.pegasys.pantheon.ethereum.core.BlockBody;
 import tech.pegasys.pantheon.ethereum.core.BlockHeader;
@@ -58,6 +57,7 @@ import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSchedule;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSpec;
 import tech.pegasys.pantheon.ethereum.mainnet.TransactionValidationParams;
 import tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator;
+import tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator.TransactionInvalidReason;
 import tech.pegasys.pantheon.ethereum.mainnet.ValidationResult;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
 import tech.pegasys.pantheon.metrics.noop.NoOpMetricsSystem;
@@ -66,6 +66,7 @@ import tech.pegasys.pantheon.util.uint.UInt256;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.junit.Before;
@@ -93,7 +94,7 @@ public class TransactionPoolTest {
 
   private final PendingTransactions transactions =
       new PendingTransactions(
-          PendingTransactions.DEFAULT_TX_RETENTION_HOURS,
+          TransactionPoolConfiguration.DEFAULT_TX_RETENTION_HOURS,
           MAX_TRANSACTIONS,
           TestClock.fixed(),
           metricsSystem);
@@ -103,7 +104,6 @@ public class TransactionPoolTest {
   private final ProtocolContext<Void> protocolContext = executionContext.getProtocolContext();
   private TransactionPool transactionPool;
   private long genesisBlockGasLimit;
-  private final AccountFilter accountFilter = mock(AccountFilter.class);
   private SyncState syncState;
   private EthContext ethContext;
   private PeerTransactionTracker peerTransactionTracker;
@@ -129,6 +129,7 @@ public class TransactionPoolTest {
             syncState,
             ethContext,
             peerTransactionTracker,
+            Wei.of(2),
             metricsSystem);
     blockchain.observeBlockAdded(transactionPool);
   }
@@ -257,6 +258,37 @@ public class TransactionPoolTest {
   }
 
   @Test
+  public void shouldNotAddRemoteTransactionsWhenGasPriceBelowMinimum() {
+    final Transaction transaction =
+        new TransactionTestFixture()
+            .nonce(1)
+            .gasLimit(0)
+            .gasPrice(Wei.of(1))
+            .createTransaction(KEY_PAIR1);
+    transactionPool.addRemoteTransactions(singletonList(transaction));
+
+    assertTransactionNotPending(transaction);
+    verifyZeroInteractions(transactionValidator); // Reject before validation
+  }
+
+  @Test
+  public void shouldRejectLocalTransactionsWhenGasPriceBelowMinimum() {
+
+    final Transaction transaction =
+        new TransactionTestFixture()
+            .nonce(1)
+            .gasLimit(0)
+            .gasPrice(Wei.of(1))
+            .createTransaction(KEY_PAIR1);
+    final ValidationResult<TransactionInvalidReason> result =
+        transactionPool.addLocalTransaction(transaction);
+
+    assertThat(result).isEqualTo(ValidationResult.invalid(GAS_PRICE_TOO_LOW));
+    assertTransactionNotPending(transaction);
+    verifyZeroInteractions(transactionValidator); // Reject before validation
+  }
+
+  @Test
   public void shouldNotAddRemoteTransactionsThatAreInvalidAccordingToInvariantChecks() {
     givenTransactionIsValid(transaction2);
     when(transactionValidator.validate(transaction1))
@@ -348,6 +380,7 @@ public class TransactionPoolTest {
             syncState,
             ethContext,
             peerTransactionTracker,
+            Wei.ZERO,
             metricsSystem);
 
     when(pendingTransactions.containsTransaction(transaction1.hash())).thenReturn(true);
@@ -443,32 +476,6 @@ public class TransactionPoolTest {
   }
 
   @Test
-  public void shouldAllowWhitelistedTransactionWhenWhitelistEnabled() {
-    transactionPool.setAccountFilter(accountFilter);
-    givenTransactionIsValid(transaction1);
-
-    when(accountFilter.permitted(transaction1.getSender().toString())).thenReturn(true);
-
-    assertThat(transactionPool.addLocalTransaction(transaction1)).isEqualTo(valid());
-
-    assertTransactionPending(transaction1);
-  }
-
-  @Test
-  public void shouldRejectNonWhitelistedTransactionWhenWhitelistEnabled() {
-    transactionPool.setAccountFilter(accountFilter);
-    givenTransactionIsValid(transaction1);
-
-    when(accountFilter.permitted(transaction1.getSender().toString())).thenReturn(false);
-
-    assertThat(transactionPool.addLocalTransaction(transaction1))
-        .isEqualTo(ValidationResult.invalid(TX_SENDER_NOT_AUTHORIZED));
-
-    assertTransactionNotPending(transaction1);
-    verifyZeroInteractions(batchAddedListener);
-  }
-
-  @Test
   public void shouldAllowTransactionWhenAccountWhitelistControllerIsNotPresent() {
     givenTransactionIsValid(transaction1);
 
@@ -490,6 +497,7 @@ public class TransactionPoolTest {
             syncState,
             ethContext,
             peerTransactionTracker,
+            Wei.ZERO,
             metricsSystem);
 
     final TransactionTestFixture builder = new TransactionTestFixture();
@@ -555,6 +563,7 @@ public class TransactionPoolTest {
             syncState,
             ethContext,
             peerTransactionTracker,
+            Wei.ZERO,
             metricsSystem);
 
     final TransactionTestFixture builder = new TransactionTestFixture();
@@ -587,7 +596,7 @@ public class TransactionPoolTest {
         .thenReturn(valid());
 
     final TransactionValidationParams expectedValidationParams =
-        new TransactionValidationParams.Builder().stateChange(false).allowFutureNonce(true).build();
+        TransactionValidationParams.transactionPool();
 
     transactionPool.addLocalTransaction(transaction1);
 
@@ -630,7 +639,7 @@ public class TransactionPoolTest {
             new BlockBody(transactionList, emptyList()));
     final List<TransactionReceipt> transactionReceipts =
         transactionList.stream()
-            .map(transaction -> new TransactionReceipt(1, 1, emptyList()))
+            .map(transaction -> new TransactionReceipt(1, 1, emptyList(), Optional.empty()))
             .collect(toList());
     blockchain.appendBlock(block, transactionReceipts);
     return block;

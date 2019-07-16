@@ -20,8 +20,8 @@ import tech.pegasys.pantheon.ethereum.core.Hash;
 import tech.pegasys.pantheon.ethereum.core.Transaction;
 import tech.pegasys.pantheon.metrics.Counter;
 import tech.pegasys.pantheon.metrics.LabelledMetric;
-import tech.pegasys.pantheon.metrics.MetricCategory;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
+import tech.pegasys.pantheon.metrics.PantheonMetricCategory;
 import tech.pegasys.pantheon.util.Subscribers;
 
 import java.time.Clock;
@@ -51,9 +51,6 @@ import java.util.stream.Collectors;
  */
 public class PendingTransactions {
 
-  public static final int MAX_PENDING_TRANSACTIONS = 4096;
-  public static final int DEFAULT_TX_RETENTION_HOURS = 13;
-
   private final int maxTransactionRetentionHours;
   private final Clock clock;
 
@@ -66,10 +63,10 @@ public class PendingTransactions {
   private final Map<Address, SortedMap<Long, TransactionInfo>> transactionsBySender =
       new HashMap<>();
 
-  private final Subscribers<PendingTransactionListener> listeners = new Subscribers<>();
+  private final Subscribers<PendingTransactionListener> listeners = Subscribers.create();
 
   private final Subscribers<PendingTransactionDroppedListener> transactionDroppedListeners =
-      new Subscribers<>();
+      Subscribers.create();
 
   private final LabelledMetric<Counter> transactionRemovedCounter;
   private final Counter localTransactionAddedCounter;
@@ -87,7 +84,7 @@ public class PendingTransactions {
     this.clock = clock;
     final LabelledMetric<Counter> transactionAddedCounter =
         metricsSystem.createLabelledCounter(
-            MetricCategory.TRANSACTION_POOL,
+            PantheonMetricCategory.TRANSACTION_POOL,
             "transactions_added_total",
             "Count of transactions added to the transaction pool",
             "source");
@@ -96,7 +93,7 @@ public class PendingTransactions {
 
     transactionRemovedCounter =
         metricsSystem.createLabelledCounter(
-            MetricCategory.TRANSACTION_POOL,
+            PantheonMetricCategory.TRANSACTION_POOL,
             "transactions_removed_total",
             "Count of transactions removed from the transaction pool",
             "source",

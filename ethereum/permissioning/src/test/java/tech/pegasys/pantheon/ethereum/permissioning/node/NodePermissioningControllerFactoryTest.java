@@ -13,9 +13,13 @@
 package tech.pegasys.pantheon.ethereum.permissioning.node;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 import tech.pegasys.pantheon.ethereum.core.Address;
 import tech.pegasys.pantheon.ethereum.core.Synchronizer;
+import tech.pegasys.pantheon.ethereum.p2p.peers.EnodeURL;
 import tech.pegasys.pantheon.ethereum.permissioning.LocalPermissioningConfiguration;
 import tech.pegasys.pantheon.ethereum.permissioning.NodeLocalConfigPermissioningController;
 import tech.pegasys.pantheon.ethereum.permissioning.NodePermissioningControllerFactory;
@@ -24,7 +28,6 @@ import tech.pegasys.pantheon.ethereum.permissioning.PermissioningConfiguration;
 import tech.pegasys.pantheon.ethereum.permissioning.SmartContractPermissioningConfiguration;
 import tech.pegasys.pantheon.ethereum.transaction.TransactionSimulator;
 import tech.pegasys.pantheon.metrics.noop.NoOpMetricsSystem;
-import tech.pegasys.pantheon.util.enode.EnodeURL;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -184,5 +187,34 @@ public class NodePermissioningControllerFactoryTest {
             new NoOpMetricsSystem());
 
     assertThat(controller.getSyncStatusNodePermissioningProvider()).isPresent();
+  }
+
+  @Test
+  public void createOnchainShouldFailIfValidationFails() {
+    smartContractPermissioningConfiguration = new SmartContractPermissioningConfiguration();
+    smartContractPermissioningConfiguration.setNodeSmartContractAddress(
+        Address.fromHexString("0x0000000000000000000000000000000000001234"));
+    smartContractPermissioningConfiguration.setSmartContractNodeWhitelistEnabled(true);
+    config =
+        new PermissioningConfiguration(
+            Optional.empty(), Optional.of(smartContractPermissioningConfiguration));
+
+    when(transactionSimulator.processAtHead(any())).thenThrow(new RuntimeException());
+
+    final Throwable thrown =
+        catchThrowable(
+            () ->
+                new NodePermissioningControllerFactory()
+                    .create(
+                        config,
+                        synchronizer,
+                        bootnodes,
+                        selfEnode.getNodeId(),
+                        transactionSimulator,
+                        new NoOpMetricsSystem()));
+
+    assertThat(thrown)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Error validating onchain node permissioning smart contract configuration");
   }
 }

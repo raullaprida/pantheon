@@ -13,20 +13,25 @@
 package tech.pegasys.pantheon.ethereum.permissioning;
 
 import tech.pegasys.pantheon.ethereum.core.Synchronizer;
+import tech.pegasys.pantheon.ethereum.p2p.peers.EnodeURL;
 import tech.pegasys.pantheon.ethereum.permissioning.node.NodePermissioningController;
 import tech.pegasys.pantheon.ethereum.permissioning.node.NodePermissioningProvider;
 import tech.pegasys.pantheon.ethereum.permissioning.node.provider.SyncStatusNodePermissioningProvider;
 import tech.pegasys.pantheon.ethereum.transaction.TransactionSimulator;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
 import tech.pegasys.pantheon.util.bytes.BytesValue;
-import tech.pegasys.pantheon.util.enode.EnodeURL;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 public class NodePermissioningControllerFactory {
+
+  private static final Logger LOG = LogManager.getLogger();
 
   public NodePermissioningController create(
       final PermissioningConfiguration permissioningConfiguration,
@@ -75,6 +80,30 @@ public class NodePermissioningControllerFactory {
     } else {
       syncStatusProviderOptional = Optional.empty();
     }
-    return new NodePermissioningController(syncStatusProviderOptional, providers);
+
+    NodePermissioningController nodePermissioningController =
+        new NodePermissioningController(syncStatusProviderOptional, providers);
+
+    validatePermissioningContract(nodePermissioningController);
+
+    return nodePermissioningController;
+  }
+
+  private void validatePermissioningContract(
+      final NodePermissioningController nodePermissioningController) {
+    LOG.debug("Validating onchain node permissioning smart contract configuration");
+
+    try {
+      // the enodeURLs don't matter. We just want to check if a call to the smart contract succeeds
+      nodePermissioningController.isPermitted(
+          EnodeURL.fromString(
+              "enode://6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0@10.3.58.6:30303"),
+          EnodeURL.fromString(
+              "enode://6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0@10.3.58.6:30303"));
+    } catch (Exception e) {
+      final String msg = "Error validating onchain node permissioning smart contract configuration";
+      LOG.error(msg + ":", e);
+      throw new IllegalStateException(msg, e);
+    }
   }
 }

@@ -16,20 +16,22 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import tech.pegasys.pantheon.ethereum.core.SyncStatus;
 import tech.pegasys.pantheon.ethereum.core.Synchronizer;
+import tech.pegasys.pantheon.ethereum.p2p.peers.EnodeURL;
 import tech.pegasys.pantheon.ethereum.permissioning.node.NodePermissioningProvider;
 import tech.pegasys.pantheon.metrics.Counter;
-import tech.pegasys.pantheon.metrics.MetricCategory;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
-import tech.pegasys.pantheon.util.enode.EnodeURL;
+import tech.pegasys.pantheon.metrics.PantheonMetricCategory;
 
+import java.net.URI;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.OptionalLong;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public class SyncStatusNodePermissioningProvider implements NodePermissioningProvider {
 
   private final Synchronizer synchronizer;
-  private final Collection<EnodeURL> fixedNodes = new HashSet<>();
+  private final Set<URI> fixedNodes;
   private final Counter checkCounter;
   private final Counter checkCounterPermitted;
   private final Counter checkCounterUnpermitted;
@@ -44,26 +46,27 @@ public class SyncStatusNodePermissioningProvider implements NodePermissioningPro
     this.synchronizer = synchronizer;
     long id = this.synchronizer.observeSyncStatus(this::handleSyncStatusUpdate);
     this.syncStatusObserverId = OptionalLong.of(id);
-    this.fixedNodes.addAll(fixedNodes);
+    this.fixedNodes =
+        fixedNodes.stream().map(EnodeURL::toURIWithoutDiscoveryPort).collect(Collectors.toSet());
 
     metricsSystem.createIntegerGauge(
-        MetricCategory.PERMISSIONING,
+        PantheonMetricCategory.PERMISSIONING,
         "sync_status_node_sync_reached",
         "Whether the sync status permissioning provider has realised sync yet",
         () -> hasReachedSync ? 1 : 0);
     this.checkCounter =
         metricsSystem.createCounter(
-            MetricCategory.PERMISSIONING,
+            PantheonMetricCategory.PERMISSIONING,
             "sync_status_node_check_count",
             "Number of times the sync status permissioning provider has been checked");
     this.checkCounterPermitted =
         metricsSystem.createCounter(
-            MetricCategory.PERMISSIONING,
+            PantheonMetricCategory.PERMISSIONING,
             "sync_status_node_check_count_permitted",
             "Number of times the sync status permissioning provider has been checked and returned permitted");
     this.checkCounterUnpermitted =
         metricsSystem.createCounter(
-            MetricCategory.PERMISSIONING,
+            PantheonMetricCategory.PERMISSIONING,
             "sync_status_node_check_count_unpermitted",
             "Number of times the sync status permissioning provider has been checked and returned unpermitted");
   }
@@ -103,7 +106,7 @@ public class SyncStatusNodePermissioningProvider implements NodePermissioningPro
       return true;
     } else {
       checkCounter.inc();
-      if (fixedNodes.contains(destinationEnode)) {
+      if (fixedNodes.contains(destinationEnode.toURIWithoutDiscoveryPort())) {
         checkCounterPermitted.inc();
         return true;
       } else {

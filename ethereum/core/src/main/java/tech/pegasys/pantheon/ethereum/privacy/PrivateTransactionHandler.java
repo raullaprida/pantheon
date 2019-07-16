@@ -20,24 +20,23 @@ import tech.pegasys.pantheon.enclave.Enclave;
 import tech.pegasys.pantheon.enclave.types.ReceiveRequest;
 import tech.pegasys.pantheon.enclave.types.ReceiveResponse;
 import tech.pegasys.pantheon.enclave.types.SendRequest;
+import tech.pegasys.pantheon.enclave.types.SendRequestLegacy;
+import tech.pegasys.pantheon.enclave.types.SendRequestPantheon;
 import tech.pegasys.pantheon.enclave.types.SendResponse;
 import tech.pegasys.pantheon.ethereum.core.Account;
 import tech.pegasys.pantheon.ethereum.core.Address;
 import tech.pegasys.pantheon.ethereum.core.PrivacyParameters;
 import tech.pegasys.pantheon.ethereum.core.Transaction;
+import tech.pegasys.pantheon.ethereum.core.Util;
 import tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator.TransactionInvalidReason;
 import tech.pegasys.pantheon.ethereum.mainnet.ValidationResult;
 import tech.pegasys.pantheon.ethereum.rlp.BytesValueRLPOutput;
 import tech.pegasys.pantheon.ethereum.worldstate.WorldStateArchive;
-import tech.pegasys.pantheon.util.bytes.BytesValue;
 import tech.pegasys.pantheon.util.bytes.BytesValues;
 
-import java.io.IOException;
-import java.util.Base64;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import com.google.common.base.Charsets;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -48,6 +47,8 @@ public class PrivateTransactionHandler {
   private final Enclave enclave;
   private final Address privacyPrecompileAddress;
   private final SECP256K1.KeyPair nodeKeyPair;
+  private final Address signerAddress;
+  private final String enclavePublicKey;
   private final PrivateStateStorage privateStateStorage;
   private final WorldStateArchive privateWorldStateArchive;
 
@@ -56,6 +57,7 @@ public class PrivateTransactionHandler {
         new Enclave(privacyParameters.getEnclaveUri()),
         Address.privacyPrecompiled(privacyParameters.getPrivacyAddress()),
         privacyParameters.getSigningKeyPair(),
+        privacyParameters.getEnclavePublicKey(),
         privacyParameters.getPrivateStateStorage(),
         privacyParameters.getPrivateWorldStateArchive());
   }
@@ -64,16 +66,19 @@ public class PrivateTransactionHandler {
       final Enclave enclave,
       final Address privacyPrecompileAddress,
       final SECP256K1.KeyPair nodeKeyPair,
+      final String enclavePublicKey,
       final PrivateStateStorage privateStateStorage,
       final WorldStateArchive privateWorldStateArchive) {
     this.enclave = enclave;
     this.privacyPrecompileAddress = privacyPrecompileAddress;
     this.nodeKeyPair = nodeKeyPair;
+    this.signerAddress = Util.publicKeyToAddress(nodeKeyPair.getPublicKey());
+    this.enclavePublicKey = enclavePublicKey;
     this.privateStateStorage = privateStateStorage;
     this.privateWorldStateArchive = privateWorldStateArchive;
   }
 
-  public String sendToOrion(final PrivateTransaction privateTransaction) throws IOException {
+  public String sendToOrion(final PrivateTransaction privateTransaction) throws Exception {
     final SendRequest sendRequest = createSendRequest(privateTransaction);
     final SendResponse sendResponse;
 
@@ -81,21 +86,27 @@ public class PrivateTransactionHandler {
       LOG.trace("Storing private transaction in enclave");
       sendResponse = enclave.send(sendRequest);
       return sendResponse.getKey();
-    } catch (IOException e) {
+    } catch (Exception e) {
       LOG.error("Failed to store private transaction in enclave", e);
       throw e;
     }
   }
 
-  public String getPrivacyGroup(final String key, final BytesValue from) throws IOException {
-    final ReceiveRequest receiveRequest = new ReceiveRequest(key, BytesValues.asString(from));
-    LOG.debug("Getting privacy group for {}", BytesValues.asString(from));
+  public String getPrivacyGroup(final String key, final PrivateTransaction privateTransaction)
+      throws Exception {
+    if (privateTransaction.getPrivacyGroupId().isPresent()) {
+      return BytesValues.asBase64String(privateTransaction.getPrivacyGroupId().get());
+    }
+    final ReceiveRequest receiveRequest =
+        new ReceiveRequest(key, BytesValues.asBase64String(privateTransaction.getPrivateFrom()));
+    LOG.debug(
+        "Getting privacy group for {}",
+        BytesValues.asBase64String(privateTransaction.getPrivateFrom()));
     final ReceiveResponse receiveResponse;
     try {
       receiveResponse = enclave.receive(receiveRequest);
-      return BytesValue.wrap(receiveResponse.getPrivacyGroupId().getBytes(Charsets.UTF_8))
-          .toString();
-    } catch (IOException e) {
+      return receiveResponse.getPrivacyGroupId();
+    } catch (Exception e) {
       LOG.error("Failed to retrieve private transaction in enclave", e);
       throw e;
     }
@@ -112,15 +123,15 @@ public class PrivateTransactionHandler {
         .gasLimit(privateTransaction.getGasLimit())
         .to(privacyPrecompileAddress)
         .value(privateTransaction.getValue())
-        .payload(BytesValue.wrap(transactionEnclaveKey.getBytes(Charsets.UTF_8)))
-        .sender(privateTransaction.getSender())
+        .payload(BytesValues.fromBase64(transactionEnclaveKey))
+        .sender(signerAddress)
         .signAndBuild(nodeKeyPair);
   }
 
   public ValidationResult<TransactionInvalidReason> validatePrivateTransaction(
       final PrivateTransaction privateTransaction, final String privacyGroupId) {
     final long actualNonce = privateTransaction.getNonce();
-    final long expectedNonce = getSenderNonce(privateTransaction, privacyGroupId);
+    final long expectedNonce = getSenderNonce(privateTransaction.getSender(), privacyGroupId);
     LOG.debug("Validating actual nonce {} with expected nonce {}", actualNonce, expectedNonce);
     if (expectedNonce > actualNonce) {
       return ValidationResult.invalid(
@@ -142,37 +153,41 @@ public class PrivateTransactionHandler {
   }
 
   private SendRequest createSendRequest(final PrivateTransaction privateTransaction) {
-    final List<String> privateFor =
-        privateTransaction.getPrivateFor().stream()
-            .map(BytesValues::asString)
-            .collect(Collectors.toList());
-
-    // FIXME: Orion should concatenate to and from - not it pantheon
-    if (privateFor.isEmpty()) {
-      privateFor.add(BytesValues.asString(privateTransaction.getPrivateFrom()));
-    }
-
     final BytesValueRLPOutput bvrlp = new BytesValueRLPOutput();
     privateTransaction.writeTo(bvrlp);
+    final String payload = BytesValues.asBase64String(bvrlp.encoded());
 
-    return new SendRequest(
-        Base64.getEncoder().encodeToString(bvrlp.encoded().extractArray()),
-        BytesValues.asString(privateTransaction.getPrivateFrom()),
-        privateFor);
+    if (privateTransaction.getPrivacyGroupId().isPresent()) {
+      return new SendRequestPantheon(
+          payload,
+          enclavePublicKey,
+          BytesValues.asBase64String(privateTransaction.getPrivacyGroupId().get()));
+    } else {
+      final List<String> privateFor =
+          privateTransaction.getPrivateFor().get().stream()
+              .map(BytesValues::asBase64String)
+              .collect(Collectors.toList());
+
+      // FIXME: orion should accept empty privateFor
+      if (privateFor.isEmpty()) {
+        privateFor.add(BytesValues.asBase64String(privateTransaction.getPrivateFrom()));
+      }
+
+      return new SendRequestLegacy(
+          payload, BytesValues.asBase64String(privateTransaction.getPrivateFrom()), privateFor);
+    }
   }
 
-  private long getSenderNonce(
-      final PrivateTransaction privateTransaction, final String privacyGroupId) {
+  public long getSenderNonce(final Address sender, final String privacyGroupId) {
     return privateStateStorage
-        .getPrivateAccountState(BytesValue.fromHexString(privacyGroupId))
+        .getPrivateAccountState(BytesValues.fromBase64(privacyGroupId))
         .map(
             lastRootHash ->
                 privateWorldStateArchive
                     .getMutable(lastRootHash)
                     .map(
                         worldState -> {
-                          final Account maybePrivateSender =
-                              worldState.get(privateTransaction.getSender());
+                          final Account maybePrivateSender = worldState.get(sender);
 
                           if (maybePrivateSender != null) {
                             return maybePrivateSender.getNonce();
@@ -185,5 +200,13 @@ public class PrivateTransactionHandler {
         .orElse(
             // private state does not exist
             Account.DEFAULT_NONCE);
+  }
+
+  public Address getSignerAddress() {
+    return signerAddress;
+  }
+
+  public String getEnclaveKey() {
+    return enclavePublicKey;
   }
 }

@@ -35,7 +35,7 @@ import tech.pegasys.pantheon.ethereum.mainnet.BlockHeaderValidator;
 import tech.pegasys.pantheon.ethereum.mainnet.HeaderValidationMode;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSchedule;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSpec;
-import tech.pegasys.pantheon.ethereum.p2p.wire.messages.DisconnectMessage.DisconnectReason;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.messages.DisconnectMessage.DisconnectReason;
 import tech.pegasys.pantheon.ethereum.rlp.RLPException;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
 import tech.pegasys.pantheon.util.uint.UInt256;
@@ -143,7 +143,7 @@ public class BlockPropagationManager<C> {
 
     if (blockAddedEvent.getEventType().equals(EventType.HEAD_ADVANCED)) {
       final long head = blockchain.getChainHeadBlockNumber();
-      final long cutoff = head + config.blockPropagationRange().lowerEndpoint();
+      final long cutoff = head + config.getBlockPropagationRange().lowerEndpoint();
       pendingBlocks.purgeBlocksOlderThan(cutoff);
     }
   }
@@ -350,7 +350,7 @@ public class BlockPropagationManager<C> {
       final long blockNumber, final long localHeight, final long bestChainHeight) {
     final long distanceFromLocalHead = blockNumber - localHeight;
     final long distanceFromBestPeer = blockNumber - bestChainHeight;
-    final Range<Long> importRange = config.blockPropagationRange();
+    final Range<Long> importRange = config.getBlockPropagationRange();
     return importRange.contains(distanceFromLocalHead)
         && importRange.contains(distanceFromBestPeer);
   }

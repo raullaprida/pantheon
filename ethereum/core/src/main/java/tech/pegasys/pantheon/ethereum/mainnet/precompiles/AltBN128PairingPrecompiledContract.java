@@ -34,21 +34,35 @@ public class AltBN128PairingPrecompiledContract extends AbstractPrecompiledContr
   private static final int FIELD_LENGTH = 32;
   private static final int PARAMETER_LENGTH = 192;
 
-  private static final BytesValue FALSE =
+  static final BytesValue FALSE =
       BytesValue.fromHexString(
           "0x0000000000000000000000000000000000000000000000000000000000000000");
-  private static final BytesValue TRUE =
+  static final BytesValue TRUE =
       BytesValue.fromHexString(
           "0x0000000000000000000000000000000000000000000000000000000000000001");
 
-  public AltBN128PairingPrecompiledContract(final GasCalculator gasCalculator) {
+  private final Gas pairingGasCost;
+  private final Gas baseGasCost;
+
+  private AltBN128PairingPrecompiledContract(
+      final GasCalculator gasCalculator, final Gas pairingGasCost, final Gas baseGasCost) {
     super("AltBN128Pairing", gasCalculator);
+    this.pairingGasCost = pairingGasCost;
+    this.baseGasCost = baseGasCost;
+  }
+
+  public static AltBN128PairingPrecompiledContract byzantium(final GasCalculator gasCalculator) {
+    return new AltBN128PairingPrecompiledContract(gasCalculator, Gas.of(80_000), Gas.of(100_000));
+  }
+
+  public static AltBN128PairingPrecompiledContract istanbul(final GasCalculator gasCalculator) {
+    return new AltBN128PairingPrecompiledContract(gasCalculator, Gas.of(34_000), Gas.of(45_000));
   }
 
   @Override
   public Gas gasRequirement(final BytesValue input) {
     final int parameters = input.size() / PARAMETER_LENGTH;
-    return Gas.of(80_000L).times(Gas.of(parameters)).plus(Gas.of(100_000L));
+    return pairingGasCost.times(parameters).plus(baseGasCost);
   }
 
   @Override
@@ -79,7 +93,7 @@ public class AltBN128PairingPrecompiledContract extends AbstractPrecompiledContr
       final Fq2 p2_x = Fq2.create(p2_xReal, p2_xImag);
       final Fq2 p2_y = Fq2.create(p2_yReal, p2_yImag);
       final AltBn128Fq2Point p2 = new AltBn128Fq2Point(p2_x, p2_y);
-      if (!p2.isOnCurve()) {
+      if (!p2.isOnCurve() || !p2.isInGroup()) {
         return null;
       }
       b.add(p2);

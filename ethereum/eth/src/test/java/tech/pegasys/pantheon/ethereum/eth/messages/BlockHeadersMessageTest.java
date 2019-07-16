@@ -16,8 +16,8 @@ import tech.pegasys.pantheon.config.GenesisConfigFile;
 import tech.pegasys.pantheon.ethereum.core.BlockHeader;
 import tech.pegasys.pantheon.ethereum.difficulty.fixed.FixedDifficultyProtocolSchedule;
 import tech.pegasys.pantheon.ethereum.mainnet.MainnetBlockHeaderFunctions;
-import tech.pegasys.pantheon.ethereum.p2p.api.MessageData;
-import tech.pegasys.pantheon.ethereum.p2p.wire.RawMessage;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.MessageData;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.RawMessage;
 import tech.pegasys.pantheon.ethereum.rlp.BytesValueRLPInput;
 import tech.pegasys.pantheon.ethereum.rlp.RLP;
 import tech.pegasys.pantheon.ethereum.rlp.RLPInput;
@@ -58,7 +58,7 @@ public final class BlockHeadersMessageTest {
     final List<BlockHeader> readHeaders =
         message.getHeaders(
             FixedDifficultyProtocolSchedule.create(
-                GenesisConfigFile.development().getConfigOptions()));
+                GenesisConfigFile.development().getConfigOptions(), false));
 
     for (int i = 0; i < 50; ++i) {
       Assertions.assertThat(readHeaders.get(i)).isEqualTo(headers.get(i));

@@ -12,10 +12,10 @@
  */
 package tech.pegasys.pantheon.ethereum.permissioning.node;
 
+import tech.pegasys.pantheon.ethereum.p2p.peers.EnodeURL;
 import tech.pegasys.pantheon.ethereum.permissioning.NodeLocalConfigPermissioningController;
 import tech.pegasys.pantheon.ethereum.permissioning.node.provider.SyncStatusNodePermissioningProvider;
 import tech.pegasys.pantheon.util.Subscribers;
-import tech.pegasys.pantheon.util.enode.EnodeURL;
 
 import java.util.List;
 import java.util.Optional;
@@ -31,7 +31,7 @@ public class NodePermissioningController {
   private Optional<ContextualNodePermissioningProvider> insufficientPeersPermissioningProvider =
       Optional.empty();
   private final List<NodePermissioningProvider> providers;
-  private final Subscribers<Runnable> permissioningUpdateSubscribers = new Subscribers<>();
+  private final Subscribers<Runnable> permissioningUpdateSubscribers = Subscribers.create();
 
   public NodePermissioningController(
       final Optional<SyncStatusNodePermissioningProvider> syncStatusNodePermissioningProvider,
@@ -41,11 +41,15 @@ public class NodePermissioningController {
   }
 
   public boolean isPermitted(final EnodeURL sourceEnode, final EnodeURL destinationEnode) {
-    LOG.trace("Checking node permission: {} -> {}", sourceEnode, destinationEnode);
+    LOG.trace("Node permissioning: Checking {} -> {}", sourceEnode, destinationEnode);
 
     if (syncStatusNodePermissioningProvider
         .map(p -> !p.hasReachedSync() && p.isPermitted(sourceEnode, destinationEnode))
         .orElse(false)) {
+
+      LOG.trace(
+          "Node permissioning - Sync Status: Permitted {} -> {}", sourceEnode, destinationEnode);
+
       return true;
     }
 
@@ -54,19 +58,40 @@ public class NodePermissioningController {
             p -> p.isPermitted(sourceEnode, destinationEnode));
 
     if (insufficientPeerPermission.isPresent()) {
-      return insufficientPeerPermission.get();
+      final Boolean permitted = insufficientPeerPermission.get();
+
+      LOG.trace(
+          "Node permissioning - Insufficient Peers: {} {} -> {}",
+          permitted ? "Permitted" : "Rejected",
+          sourceEnode,
+          destinationEnode);
+
+      return permitted;
     }
 
     if (syncStatusNodePermissioningProvider.isPresent()
         && !syncStatusNodePermissioningProvider.get().isPermitted(sourceEnode, destinationEnode)) {
+
+      LOG.trace(
+          "Node permissioning - Sync Status: Rejected {} -> {}", sourceEnode, destinationEnode);
+
       return false;
     } else {
       for (final NodePermissioningProvider provider : providers) {
         if (!provider.isPermitted(sourceEnode, destinationEnode)) {
+          LOG.trace(
+              "Node permissioning - {}: Rejected {} -> {}",
+              provider.getClass().getSimpleName(),
+              sourceEnode,
+              destinationEnode);
+
           return false;
         }
       }
     }
+
+    LOG.trace("Node permissioning: Permitted {} -> {}", sourceEnode, destinationEnode);
+
     return true;
   }
 

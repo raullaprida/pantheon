@@ -36,7 +36,6 @@ dependencies {
   implementation project(':services:pipeline')
   implementation project(':services:tasks')
 
-  implementation 'info.picocli:picocli'
   implementation 'io.vertx:vertx-core'
   implementation 'com.google.guava:guava'
 
@@ -55,7 +54,6 @@ dependencies {
   testImplementation 'org.assertj:assertj-core'
   testImplementation 'org.awaitility:awaitility'
   testImplementation 'org.mockito:mockito-core'
-
   jmhImplementation project(path: ':ethereum:core', configuration: 'testSupportArtifacts')
 
   integrationTestImplementation project(path: ':config', configuration: 'testSupportArtifacts')

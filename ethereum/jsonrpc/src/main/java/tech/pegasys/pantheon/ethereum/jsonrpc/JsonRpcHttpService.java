@@ -19,6 +19,7 @@ import static tech.pegasys.pantheon.util.NetworkUtility.urlForSocketAddress;
 
 import tech.pegasys.pantheon.ethereum.jsonrpc.authentication.AuthenticationService;
 import tech.pegasys.pantheon.ethereum.jsonrpc.authentication.AuthenticationUtils;
+import tech.pegasys.pantheon.ethereum.jsonrpc.health.HealthService;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.JsonRpcRequest;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.JsonRpcRequestId;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.exception.InvalidJsonRpcParameters;
@@ -30,10 +31,11 @@ import tech.pegasys.pantheon.ethereum.jsonrpc.internal.response.JsonRpcResponse;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.response.JsonRpcResponseType;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.response.JsonRpcUnauthorizedResponse;
 import tech.pegasys.pantheon.metrics.LabelledMetric;
-import tech.pegasys.pantheon.metrics.MetricCategory;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
 import tech.pegasys.pantheon.metrics.OperationTimer;
 import tech.pegasys.pantheon.metrics.OperationTimer.TimingContext;
+import tech.pegasys.pantheon.metrics.PantheonMetricCategory;
+import tech.pegasys.pantheon.nat.upnp.UpnpNatManager;
 import tech.pegasys.pantheon.util.NetworkUtility;
 
 import java.net.InetSocketAddress;
@@ -81,12 +83,15 @@ public class JsonRpcHttpService {
   private final Vertx vertx;
   private final JsonRpcConfiguration config;
   private final RpcMethods rpcMethods;
+  private final Optional<UpnpNatManager> natManager;
   private final Path dataDir;
   private final LabelledMetric<OperationTimer> requestTimer;
 
   @VisibleForTesting public final Optional<AuthenticationService> authenticationService;
 
   private HttpServer httpServer;
+  private final HealthService livenessService;
+  private final HealthService readinessService;
 
   /**
    * Construct a JsonRpcHttpService handler
@@ -95,21 +100,30 @@ public class JsonRpcHttpService {
    * @param dataDir The data directory where requests can be buffered
    * @param config Configuration for the rpc methods being loaded
    * @param metricsSystem The metrics service that activities should be reported to
+   * @param natManager The NAT environment manager.
    * @param methods The json rpc methods that should be enabled
+   * @param livenessService A service responsible for reporting whether this node is live
+   * @param readinessService A service responsible for reporting whether this node has fully started
    */
   public JsonRpcHttpService(
       final Vertx vertx,
       final Path dataDir,
       final JsonRpcConfiguration config,
       final MetricsSystem metricsSystem,
-      final Map<String, JsonRpcMethod> methods) {
+      final Optional<UpnpNatManager> natManager,
+      final Map<String, JsonRpcMethod> methods,
+      final HealthService livenessService,
+      final HealthService readinessService) {
     this(
         vertx,
         dataDir,
         config,
         metricsSystem,
+        natManager,
         methods,
-        AuthenticationService.create(vertx, config));
+        AuthenticationService.create(vertx, config),
+        livenessService,
+        readinessService);
   }
 
   private JsonRpcHttpService(
@@ -117,20 +131,26 @@ public class JsonRpcHttpService {
       final Path dataDir,
       final JsonRpcConfiguration config,
       final MetricsSystem metricsSystem,
+      final Optional<UpnpNatManager> natManager,
       final Map<String, JsonRpcMethod> methods,
-      final Optional<AuthenticationService> authenticationService) {
+      final Optional<AuthenticationService> authenticationService,
+      final HealthService livenessService,
+      final HealthService readinessService) {
     this.dataDir = dataDir;
     requestTimer =
         metricsSystem.createLabelledTimer(
-            MetricCategory.RPC,
+            PantheonMetricCategory.RPC,
             "request_time",
             "Time taken to process a JSON-RPC request",
             "methodName");
     validateConfig(config);
     this.config = config;
     this.vertx = vertx;
+    this.natManager = natManager;
     this.rpcMethods = new RpcMethods(methods);
     this.authenticationService = authenticationService;
+    this.livenessService = livenessService;
+    this.readinessService = readinessService;
   }
 
   private void validateConfig(final JsonRpcConfiguration config) {
@@ -142,6 +162,7 @@ public class JsonRpcHttpService {
 
   public CompletableFuture<?> start() {
     LOG.info("Starting JsonRPC service on {}:{}", config.getHost(), config.getPort());
+
     // Create the HTTP server and a router object.
     httpServer =
         vertx.createHttpServer(
@@ -166,6 +187,14 @@ public class JsonRpcHttpService {
                 .setUploadsDirectory(dataDir.resolve("uploads").toString())
                 .setDeleteUploadedFilesOnEnd(true));
     router.route("/").method(HttpMethod.GET).handler(this::handleEmptyRequest);
+    router
+        .route(HealthService.LIVENESS_PATH)
+        .method(HttpMethod.GET)
+        .handler(livenessService::handleRequest);
+    router
+        .route(HealthService.READINESS_PATH)
+        .method(HttpMethod.GET)
+        .handler(readinessService::handleRequest);
     router
         .route("/")
         .method(HttpMethod.POST)
@@ -193,10 +222,17 @@ public class JsonRpcHttpService {
             res -> {
               if (!res.failed()) {
                 resultFuture.complete(null);
+                final int actualPort = httpServer.actualPort();
                 LOG.info(
-                    "JsonRPC service started and listening on {}:{}",
-                    config.getHost(),
-                    httpServer.actualPort());
+                    "JsonRPC service started and listening on {}:{}", config.getHost(), actualPort);
+                config.setPort(actualPort);
+                // Request that a NAT port forward for our server port
+                if (natManager.isPresent()) {
+                  natManager
+                      .get()
+                      .requestPortForward(
+                          config.getPort(), UpnpNatManager.Protocol.TCP, "partheon-json-rpc");
+                }
                 return;
               }
               httpServer = null;

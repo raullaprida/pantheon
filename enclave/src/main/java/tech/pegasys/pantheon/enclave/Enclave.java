@@ -12,6 +12,12 @@
  */
 package tech.pegasys.pantheon.enclave;
 
+import tech.pegasys.pantheon.enclave.types.CreatePrivacyGroupRequest;
+import tech.pegasys.pantheon.enclave.types.DeletePrivacyGroupRequest;
+import tech.pegasys.pantheon.enclave.types.ErrorResponse;
+import tech.pegasys.pantheon.enclave.types.FindPrivacyGroupRequest;
+import tech.pegasys.pantheon.enclave.types.FindPrivacyGroupResponse;
+import tech.pegasys.pantheon.enclave.types.PrivacyGroup;
 import tech.pegasys.pantheon.enclave.types.ReceiveRequest;
 import tech.pegasys.pantheon.enclave.types.ReceiveResponse;
 import tech.pegasys.pantheon.enclave.types.SendRequest;
@@ -43,9 +49,9 @@ public class Enclave {
     this.client = new OkHttpClient();
   }
 
-  public Boolean upCheck() throws IOException {
-    String url = enclaveUri.resolve("/upcheck").toString();
-    Request request = new Request.Builder().url(url).get().build();
+  public boolean upCheck() throws IOException {
+    final String url = enclaveUri.resolve("/upcheck").toString();
+    final Request request = new Request.Builder().url(url).get().build();
 
     try (Response response = client.newCall(request).execute()) {
       return response.isSuccessful();
@@ -55,29 +61,48 @@ public class Enclave {
     }
   }
 
-  public SendResponse send(final SendRequest content) throws IOException {
-    Request request = buildPostRequest(JSON, content, "/send");
-    return executePost(request, SendResponse.class);
+  public SendResponse send(final SendRequest content) throws Exception {
+    return executePost(buildPostRequest(JSON, content, "/send"), SendResponse.class);
   }
 
-  public ReceiveResponse receive(final ReceiveRequest content) throws IOException {
-    Request request = buildPostRequest(ORION, content, "/receive");
-    return executePost(request, ReceiveResponse.class);
+  public ReceiveResponse receive(final ReceiveRequest content) throws Exception {
+    return executePost(buildPostRequest(ORION, content, "/receive"), ReceiveResponse.class);
+  }
+
+  public PrivacyGroup createPrivacyGroup(final CreatePrivacyGroupRequest content) throws Exception {
+    return executePost(buildPostRequest(JSON, content, "/createPrivacyGroup"), PrivacyGroup.class);
+  }
+
+  public String deletePrivacyGroup(final DeletePrivacyGroupRequest content) throws Exception {
+    return executePost(buildPostRequest(JSON, content, "/deletePrivacyGroup"), String.class);
+  }
+
+  public FindPrivacyGroupResponse[] findPrivacyGroup(final FindPrivacyGroupRequest content)
+      throws Exception {
+    Request request = buildPostRequest(JSON, content, "/findPrivacyGroup");
+    return executePost(request, FindPrivacyGroupResponse[].class);
   }
 
   private Request buildPostRequest(
-      final MediaType mediaType, final Object content, final String endpoint) throws IOException {
-    RequestBody body = RequestBody.create(mediaType, objectMapper.writeValueAsString(content));
-    String url = enclaveUri.resolve(endpoint).toString();
+      final MediaType mediaType, final Object content, final String endpoint) throws Exception {
+    final RequestBody body =
+        RequestBody.create(mediaType, objectMapper.writeValueAsString(content));
+    final String url = enclaveUri.resolve(endpoint).toString();
     return new Request.Builder().url(url).post(body).build();
   }
 
-  private <T> T executePost(final Request request, final Class<T> responseType) throws IOException {
+  private <T> T executePost(final Request request, final Class<T> responseType) throws Exception {
     try (Response response = client.newCall(request).execute()) {
-      return objectMapper.readValue(response.body().string(), responseType);
-    } catch (IOException e) {
+      if (response.isSuccessful()) {
+        return objectMapper.readValue(response.body().string(), responseType);
+      } else {
+        final ErrorResponse errorResponse =
+            objectMapper.readValue(response.body().string(), ErrorResponse.class);
+        throw new EnclaveException(errorResponse.getError());
+      }
+    } catch (Exception e) {
       LOG.error("Enclave failed to execute {}", request, e);
-      throw new IOException("Enclave failed to execute post");
+      throw e;
     }
   }
 }

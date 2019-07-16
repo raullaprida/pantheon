@@ -23,9 +23,9 @@ import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.contentOf;
 import static org.junit.Assert.assertTrue;
-import static tech.pegasys.pantheon.cli.operator.OperatorSubCommand.COMMAND_NAME;
-import static tech.pegasys.pantheon.cli.operator.OperatorSubCommand.GENERATE_BLOCKCHAIN_CONFIG_SUBCOMMAND_NAME;
 import static tech.pegasys.pantheon.cli.operator.OperatorSubCommandTest.Cmd.cmd;
+import static tech.pegasys.pantheon.cli.subcommands.operator.OperatorSubCommand.COMMAND_NAME;
+import static tech.pegasys.pantheon.cli.subcommands.operator.OperatorSubCommand.GENERATE_BLOCKCHAIN_CONFIG_SUBCOMMAND_NAME;
 
 import tech.pegasys.pantheon.cli.CommandTestAbstract;
 
@@ -62,9 +62,9 @@ public class OperatorSubCommandTest extends CommandTestAbstract {
           + System.lineSeparator()
           + "Commands:"
           + System.lineSeparator()
-          + "  generate-blockchain-config  This command generates blockchain network"
+          + "  generate-blockchain-config  This command generates node keypairs, genesis"
           + System.lineSeparator()
-          + "                                configuration files.";
+          + "                                file (with RLP encoded IBFT 2.0 extra data).";
 
   private Path tmpOutputDirectoryPath;
 
@@ -75,7 +75,7 @@ public class OperatorSubCommandTest extends CommandTestAbstract {
 
   @Test
   public void operatorSubCommandExistAndHaveSubCommands() {
-    final CommandSpec spec = parseCommand();
+    final CommandSpec spec = parseCommand().getSpec();
     assertThat(spec.subcommands()).containsKeys(COMMAND_NAME);
     assertThat(spec.subcommands().get(COMMAND_NAME).getSubcommands())
         .containsKeys(GENERATE_BLOCKCHAIN_CONFIG_SUBCOMMAND_NAME);

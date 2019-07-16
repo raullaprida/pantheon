@@ -17,7 +17,7 @@ import tech.pegasys.pantheon.ethereum.core.BlockBody;
 import tech.pegasys.pantheon.ethereum.core.BlockHeader;
 import tech.pegasys.pantheon.ethereum.core.Hash;
 import tech.pegasys.pantheon.ethereum.core.TransactionReceipt;
-import tech.pegasys.pantheon.ethereum.eth.EthereumWireProtocolConfiguration;
+import tech.pegasys.pantheon.ethereum.eth.EthProtocolConfiguration;
 import tech.pegasys.pantheon.ethereum.eth.messages.BlockBodiesMessage;
 import tech.pegasys.pantheon.ethereum.eth.messages.BlockHeadersMessage;
 import tech.pegasys.pantheon.ethereum.eth.messages.EthPV62;
@@ -28,9 +28,9 @@ import tech.pegasys.pantheon.ethereum.eth.messages.GetNodeDataMessage;
 import tech.pegasys.pantheon.ethereum.eth.messages.GetReceiptsMessage;
 import tech.pegasys.pantheon.ethereum.eth.messages.NodeDataMessage;
 import tech.pegasys.pantheon.ethereum.eth.messages.ReceiptsMessage;
-import tech.pegasys.pantheon.ethereum.p2p.api.MessageData;
-import tech.pegasys.pantheon.ethereum.p2p.api.PeerConnection.PeerNotConnected;
-import tech.pegasys.pantheon.ethereum.p2p.wire.messages.DisconnectMessage.DisconnectReason;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.connections.PeerConnection.PeerNotConnected;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.MessageData;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.messages.DisconnectMessage.DisconnectReason;
 import tech.pegasys.pantheon.ethereum.rlp.RLPException;
 import tech.pegasys.pantheon.ethereum.worldstate.WorldStateArchive;
 import tech.pegasys.pantheon.util.bytes.BytesValue;
@@ -51,13 +51,13 @@ class EthServer {
   private final Blockchain blockchain;
   private final WorldStateArchive worldStateArchive;
   private final EthMessages ethMessages;
-  private final EthereumWireProtocolConfiguration ethereumWireProtocolConfiguration;
+  private final EthProtocolConfiguration ethereumWireProtocolConfiguration;
 
   EthServer(
       final Blockchain blockchain,
       final WorldStateArchive worldStateArchive,
       final EthMessages ethMessages,
-      final EthereumWireProtocolConfiguration ethereumWireProtocolConfiguration) {
+      final EthProtocolConfiguration ethereumWireProtocolConfiguration) {
     this.blockchain = blockchain;
     this.worldStateArchive = worldStateArchive;
     this.ethMessages = ethMessages;

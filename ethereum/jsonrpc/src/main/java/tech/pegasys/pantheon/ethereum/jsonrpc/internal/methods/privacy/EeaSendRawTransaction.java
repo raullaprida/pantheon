@@ -12,10 +12,12 @@
  */
 package tech.pegasys.pantheon.ethereum.jsonrpc.internal.methods.privacy;
 
+import static tech.pegasys.pantheon.ethereum.jsonrpc.JsonRpcEnclaveErrorConverter.convertEnclaveInvalidReason;
 import static tech.pegasys.pantheon.ethereum.jsonrpc.JsonRpcErrorConverter.convertTransactionInvalidReason;
 
 import tech.pegasys.pantheon.ethereum.core.Address;
 import tech.pegasys.pantheon.ethereum.core.Transaction;
+import tech.pegasys.pantheon.ethereum.eth.transactions.PendingTransactions;
 import tech.pegasys.pantheon.ethereum.eth.transactions.TransactionPool;
 import tech.pegasys.pantheon.ethereum.jsonrpc.RpcMethod;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.JsonRpcRequest;
@@ -33,8 +35,9 @@ import tech.pegasys.pantheon.ethereum.privacy.Restriction;
 import tech.pegasys.pantheon.ethereum.rlp.RLP;
 import tech.pegasys.pantheon.ethereum.rlp.RLPException;
 import tech.pegasys.pantheon.util.bytes.BytesValue;
+import tech.pegasys.pantheon.util.bytes.BytesValues;
 
-import java.io.IOException;
+import java.util.OptionalLong;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -47,6 +50,7 @@ public class EeaSendRawTransaction implements JsonRpcMethod {
   private final PrivateTransactionHandler privateTransactionHandler;
   private final TransactionPool transactionPool;
   private final JsonRpcParameter parameters;
+  private final PendingTransactions pendingTransactions;
 
   public EeaSendRawTransaction(
       final BlockchainQueries blockchain,
@@ -57,6 +61,7 @@ public class EeaSendRawTransaction implements JsonRpcMethod {
     this.privateTransactionHandler = privateTransactionHandler;
     this.transactionPool = transactionPool;
     this.parameters = parameters;
+    this.pendingTransactions = transactionPool.getPendingTransactions();
   }
 
   @Override
@@ -90,17 +95,16 @@ public class EeaSendRawTransaction implements JsonRpcMethod {
     final String enclaveKey;
     try {
       enclaveKey = privateTransactionHandler.sendToOrion(privateTransaction);
-    } catch (final IOException e) {
-      return new JsonRpcErrorResponse(request.getId(), JsonRpcError.ENCLAVE_ERROR);
+    } catch (final Exception e) {
+      return new JsonRpcErrorResponse(request.getId(), convertEnclaveInvalidReason(e.getMessage()));
     }
 
     final String privacyGroupId;
     try {
-      privacyGroupId =
-          privateTransactionHandler.getPrivacyGroup(
-              enclaveKey, privateTransaction.getPrivateFrom());
-    } catch (final IOException e) {
-      return new JsonRpcErrorResponse(request.getId(), JsonRpcError.ENCLAVE_ERROR);
+      privacyGroupId = privateTransactionHandler.getPrivacyGroup(enclaveKey, privateTransaction);
+
+    } catch (final Exception e) {
+      return new JsonRpcErrorResponse(request.getId(), convertEnclaveInvalidReason(e.getMessage()));
     }
 
     return privateTransactionHandler
@@ -109,7 +113,9 @@ public class EeaSendRawTransaction implements JsonRpcMethod {
             () -> {
               final Transaction privacyMarkerTransaction =
                   privateTransactionHandler.createPrivacyMarkerTransaction(
-                      enclaveKey, privateTransaction, getNonce(privateTransaction.getSender()));
+                      enclaveKey,
+                      privateTransaction,
+                      getNonce(privateTransactionHandler.getSignerAddress()));
               return transactionPool
                   .addLocalTransaction(privacyMarkerTransaction)
                   .either(
@@ -128,7 +134,9 @@ public class EeaSendRawTransaction implements JsonRpcMethod {
   private PrivateTransaction decodeRawTransaction(final String hash)
       throws InvalidJsonRpcRequestException {
     try {
-      return PrivateTransaction.readFrom(RLP.input(BytesValue.fromHexString(hash)));
+      return PrivateTransaction.readFrom(
+          RLP.input(BytesValue.fromHexString(hash)),
+          BytesValues.fromBase64(privateTransactionHandler.getEnclaveKey()));
     } catch (final IllegalArgumentException | RLPException e) {
       LOG.debug(e);
       throw new InvalidJsonRpcRequestException("Invalid raw private transaction hex", e);
@@ -136,6 +144,8 @@ public class EeaSendRawTransaction implements JsonRpcMethod {
   }
 
   protected long getNonce(final Address address) {
-    return blockchain.getTransactionCount(address, blockchain.headBlockNumber());
+    final OptionalLong pendingNonce = pendingTransactions.getNextNonceForSender(address);
+    return pendingNonce.orElseGet(
+        () -> blockchain.getTransactionCount(address, blockchain.headBlockNumber()));
   }
 }

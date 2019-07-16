@@ -12,7 +12,7 @@
  */
 package tech.pegasys.pantheon;
 
-import tech.pegasys.pantheon.cli.EthNetworkConfig;
+import tech.pegasys.pantheon.cli.config.EthNetworkConfig;
 import tech.pegasys.pantheon.controller.PantheonController;
 import tech.pegasys.pantheon.crypto.SECP256K1.KeyPair;
 import tech.pegasys.pantheon.ethereum.ProtocolContext;
@@ -30,6 +30,9 @@ import tech.pegasys.pantheon.ethereum.jsonrpc.JsonRpcConfiguration;
 import tech.pegasys.pantheon.ethereum.jsonrpc.JsonRpcHttpService;
 import tech.pegasys.pantheon.ethereum.jsonrpc.JsonRpcMethodsFactory;
 import tech.pegasys.pantheon.ethereum.jsonrpc.RpcApi;
+import tech.pegasys.pantheon.ethereum.jsonrpc.health.HealthService;
+import tech.pegasys.pantheon.ethereum.jsonrpc.health.LivenessCheck;
+import tech.pegasys.pantheon.ethereum.jsonrpc.health.ReadinessCheck;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.filter.FilterIdGenerator;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.filter.FilterManager;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.filter.FilterRepository;
@@ -46,34 +49,39 @@ import tech.pegasys.pantheon.ethereum.jsonrpc.websocket.subscription.pending.Pen
 import tech.pegasys.pantheon.ethereum.jsonrpc.websocket.subscription.pending.PendingTransactionSubscriptionService;
 import tech.pegasys.pantheon.ethereum.jsonrpc.websocket.subscription.syncing.SyncingSubscriptionService;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSchedule;
-import tech.pegasys.pantheon.ethereum.p2p.InsufficientPeersPermissioningProvider;
-import tech.pegasys.pantheon.ethereum.p2p.NetworkRunner;
-import tech.pegasys.pantheon.ethereum.p2p.NetworkRunner.NetworkBuilder;
-import tech.pegasys.pantheon.ethereum.p2p.NoopP2PNetwork;
-import tech.pegasys.pantheon.ethereum.p2p.api.P2PNetwork;
-import tech.pegasys.pantheon.ethereum.p2p.api.ProtocolManager;
 import tech.pegasys.pantheon.ethereum.p2p.config.DiscoveryConfiguration;
 import tech.pegasys.pantheon.ethereum.p2p.config.NetworkingConfiguration;
 import tech.pegasys.pantheon.ethereum.p2p.config.RlpxConfiguration;
 import tech.pegasys.pantheon.ethereum.p2p.config.SubProtocolConfiguration;
 import tech.pegasys.pantheon.ethereum.p2p.network.DefaultP2PNetwork;
+import tech.pegasys.pantheon.ethereum.p2p.network.NetworkRunner;
+import tech.pegasys.pantheon.ethereum.p2p.network.NetworkRunner.NetworkBuilder;
+import tech.pegasys.pantheon.ethereum.p2p.network.NoopP2PNetwork;
+import tech.pegasys.pantheon.ethereum.p2p.network.P2PNetwork;
+import tech.pegasys.pantheon.ethereum.p2p.network.ProtocolManager;
 import tech.pegasys.pantheon.ethereum.p2p.peers.DefaultPeer;
+import tech.pegasys.pantheon.ethereum.p2p.peers.EnodeURL;
+import tech.pegasys.pantheon.ethereum.p2p.permissions.PeerPermissions;
 import tech.pegasys.pantheon.ethereum.p2p.permissions.PeerPermissionsBlacklist;
-import tech.pegasys.pantheon.ethereum.p2p.wire.Capability;
-import tech.pegasys.pantheon.ethereum.p2p.wire.SubProtocol;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.Capability;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.SubProtocol;
 import tech.pegasys.pantheon.ethereum.permissioning.AccountLocalConfigPermissioningController;
 import tech.pegasys.pantheon.ethereum.permissioning.NodeLocalConfigPermissioningController;
 import tech.pegasys.pantheon.ethereum.permissioning.NodePermissioningControllerFactory;
 import tech.pegasys.pantheon.ethereum.permissioning.PermissioningConfiguration;
 import tech.pegasys.pantheon.ethereum.permissioning.account.AccountPermissioningController;
+import tech.pegasys.pantheon.ethereum.permissioning.account.AccountPermissioningControllerFactory;
+import tech.pegasys.pantheon.ethereum.permissioning.node.InsufficientPeersPermissioningProvider;
 import tech.pegasys.pantheon.ethereum.permissioning.node.NodePermissioningController;
+import tech.pegasys.pantheon.ethereum.permissioning.node.PeerPermissionsAdapter;
 import tech.pegasys.pantheon.ethereum.transaction.TransactionSimulator;
 import tech.pegasys.pantheon.ethereum.worldstate.WorldStateArchive;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
 import tech.pegasys.pantheon.metrics.prometheus.MetricsConfiguration;
 import tech.pegasys.pantheon.metrics.prometheus.MetricsService;
+import tech.pegasys.pantheon.nat.NatMethod;
+import tech.pegasys.pantheon.nat.upnp.UpnpNatManager;
 import tech.pegasys.pantheon.util.bytes.BytesValue;
-import tech.pegasys.pantheon.util.enode.EnodeURL;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -95,22 +103,27 @@ public class RunnerBuilder {
 
   private Vertx vertx;
   private PantheonController<?> pantheonController;
+
+  private NetworkingConfiguration networkingConfiguration = NetworkingConfiguration.create();
+  private Collection<BytesValue> bannedNodeIds = new ArrayList<>();
   private boolean p2pEnabled = true;
   private boolean discovery;
-  private EthNetworkConfig ethNetworkConfig;
   private String p2pAdvertisedHost;
   private int p2pListenPort;
+  private NatMethod natMethod = NatMethod.NONE;
   private int maxPeers;
+  private boolean limitRemoteWireConnectionsEnabled = false;
+  private float fractionRemoteConnectionsAllowed;
+  private EthNetworkConfig ethNetworkConfig;
+
   private JsonRpcConfiguration jsonRpcConfiguration;
   private GraphQLConfiguration graphQLConfiguration;
   private WebSocketConfiguration webSocketConfiguration;
   private Path dataDir;
-  private Collection<BytesValue> bannedNodeIds = new ArrayList<>();
   private MetricsConfiguration metricsConfiguration;
   private MetricsSystem metricsSystem;
   private Optional<PermissioningConfiguration> permissioningConfiguration = Optional.empty();
   private Collection<EnodeURL> staticNodes = Collections.emptyList();
-  private AccountPermissioningController accountPermissioningController;
 
   public RunnerBuilder vertx(final Vertx vertx) {
     this.vertx = vertx;
@@ -137,6 +150,12 @@ public class RunnerBuilder {
     return this;
   }
 
+  public RunnerBuilder networkingConfiguration(
+      final NetworkingConfiguration networkingConfiguration) {
+    this.networkingConfiguration = networkingConfiguration;
+    return this;
+  }
+
   public RunnerBuilder p2pAdvertisedHost(final String p2pAdvertisedHost) {
     this.p2pAdvertisedHost = p2pAdvertisedHost;
     return this;
@@ -147,8 +166,25 @@ public class RunnerBuilder {
     return this;
   }
 
+  public RunnerBuilder natMethod(final NatMethod natMethod) {
+    this.natMethod = natMethod;
+    return this;
+  }
+
   public RunnerBuilder maxPeers(final int maxPeers) {
     this.maxPeers = maxPeers;
+    return this;
+  }
+
+  public RunnerBuilder limitRemoteWireConnectionsEnabled(
+      final boolean limitRemoteWireConnectionsEnabled) {
+    this.limitRemoteWireConnectionsEnabled = limitRemoteWireConnectionsEnabled;
+    return this;
+  }
+
+  public RunnerBuilder fractionRemoteConnectionsAllowed(
+      final float fractionRemoteConnectionsAllowed) {
+    this.fractionRemoteConnectionsAllowed = fractionRemoteConnectionsAllowed;
     return this;
   }
 
@@ -198,12 +234,6 @@ public class RunnerBuilder {
     return this;
   }
 
-  public RunnerBuilder accountPermissioningController(
-      final AccountPermissioningController accountPermissioningController) {
-    this.accountPermissioningController = accountPermissioningController;
-    return this;
-  }
-
   public Runner build() {
 
     Preconditions.checkNotNull(pantheonController);
@@ -240,12 +270,15 @@ public class RunnerBuilder {
             .flatMap(protocolManager -> protocolManager.getSupportedCapabilities().stream())
             .collect(Collectors.toSet());
 
-    final NetworkingConfiguration networkConfig =
-        new NetworkingConfiguration()
-            .setRlpx(RlpxConfiguration.create().setBindPort(p2pListenPort).setMaxPeers(maxPeers))
-            .setDiscovery(discoveryConfiguration)
+    final RlpxConfiguration rlpxConfiguration =
+        RlpxConfiguration.create()
+            .setBindPort(p2pListenPort)
+            .setMaxPeers(maxPeers)
+            .setSupportedProtocols(subProtocols)
             .setClientId(PantheonInfo.version())
-            .setSupportedProtocols(subProtocols);
+            .setLimitRemoteWireConnectionsEnabled(limitRemoteWireConnectionsEnabled)
+            .setFractionRemoteWireConnectionsAllowed(fractionRemoteConnectionsAllowed);
+    networkingConfiguration.setRlpx(rlpxConfiguration).setDiscovery(discoveryConfiguration);
 
     final PeerPermissionsBlacklist bannedNodes = PeerPermissionsBlacklist.create();
     bannedNodeIds.forEach(bannedNodes::add);
@@ -263,18 +296,25 @@ public class RunnerBuilder {
         buildNodePermissioningController(
             bootnodes, synchronizer, transactionSimulator, localNodeId);
 
+    final PeerPermissions peerPermissions =
+        nodePermissioningController
+            .map(nodePC -> new PeerPermissionsAdapter(nodePC, bootnodes, context.getBlockchain()))
+            .map(nodePerms -> PeerPermissions.combine(nodePerms, bannedNodes))
+            .orElse(bannedNodes);
+
+    final Optional<UpnpNatManager> natManager = buildNatManager(natMethod);
+
     NetworkBuilder inactiveNetwork = (caps) -> new NoopP2PNetwork();
     NetworkBuilder activeNetwork =
         (caps) ->
             DefaultP2PNetwork.builder()
                 .vertx(vertx)
                 .keyPair(keyPair)
-                .config(networkConfig)
-                .peerPermissions(bannedNodes)
+                .config(networkingConfiguration)
+                .peerPermissions(peerPermissions)
                 .metricsSystem(metricsSystem)
                 .supportedCapabilities(caps)
-                .nodePermissioningController(nodePermissioningController)
-                .blockchain(context.getBlockchain())
+                .natManager(natManager)
                 .build();
 
     final NetworkRunner networkRunner =
@@ -306,11 +346,14 @@ public class RunnerBuilder {
     final Optional<NodeLocalConfigPermissioningController> nodeLocalConfigPermissioningController =
         nodePermissioningController.flatMap(NodePermissioningController::localConfigController);
 
+    final Optional<AccountPermissioningController> accountPermissioningController =
+        buildAccountPermissioningController(
+            permissioningConfiguration, pantheonController, transactionSimulator);
+
     final Optional<AccountLocalConfigPermissioningController>
         accountLocalConfigPermissioningController =
-            accountPermissioningController != null
-                ? accountPermissioningController.getAccountLocalConfigPermissioningController()
-                : Optional.empty();
+            accountPermissioningController.flatMap(
+                AccountPermissioningController::getAccountLocalConfigPermissioningController);
 
     Optional<JsonRpcHttpService> jsonRpcHttpService = Optional.empty();
     if (jsonRpcConfiguration.isEnabled()) {
@@ -336,7 +379,14 @@ public class RunnerBuilder {
       jsonRpcHttpService =
           Optional.of(
               new JsonRpcHttpService(
-                  vertx, dataDir, jsonRpcConfiguration, metricsSystem, jsonRpcMethods));
+                  vertx,
+                  dataDir,
+                  jsonRpcConfiguration,
+                  metricsSystem,
+                  natManager,
+                  jsonRpcMethods,
+                  new HealthService(new LivenessCheck()),
+                  new HealthService(new ReadinessCheck(peerNetwork, synchronizer))));
     }
 
     Optional<GraphQLHttpService> graphQLHttpService = Optional.empty();
@@ -350,7 +400,7 @@ public class RunnerBuilder {
               transactionPool,
               miningCoordinator,
               synchronizer);
-      GraphQL graphQL = null;
+      final GraphQL graphQL;
       try {
         graphQL = GraphQLProvider.buildGraphQL(fetchers);
       } catch (final IOException ioe) {
@@ -410,6 +460,7 @@ public class RunnerBuilder {
     return new Runner(
         vertx,
         networkRunner,
+        natManager,
         jsonRpcHttpService,
         graphQLHttpService,
         webSocketService,
@@ -424,16 +475,55 @@ public class RunnerBuilder {
       final TransactionSimulator transactionSimulator,
       final BytesValue localNodeId) {
     final Collection<EnodeURL> fixedNodes = getFixedNodes(bootnodesAsEnodeURLs, staticNodes);
-    return permissioningConfiguration.map(
-        config ->
-            new NodePermissioningControllerFactory()
-                .create(
-                    config,
-                    synchronizer,
-                    fixedNodes,
-                    localNodeId,
-                    transactionSimulator,
-                    metricsSystem));
+
+    if (permissioningConfiguration.isPresent()) {
+      final PermissioningConfiguration configuration = this.permissioningConfiguration.get();
+      final NodePermissioningController nodePermissioningController =
+          new NodePermissioningControllerFactory()
+              .create(
+                  configuration,
+                  synchronizer,
+                  fixedNodes,
+                  localNodeId,
+                  transactionSimulator,
+                  metricsSystem);
+
+      return Optional.of(nodePermissioningController);
+    } else {
+      return Optional.empty();
+    }
+  }
+
+  private Optional<UpnpNatManager> buildNatManager(final NatMethod natMethod) {
+    switch (natMethod) {
+      case UPNP:
+        return Optional.of(new UpnpNatManager());
+      case NONE:
+      default:
+        return Optional.ofNullable(null);
+    }
+  }
+
+  private Optional<AccountPermissioningController> buildAccountPermissioningController(
+      final Optional<PermissioningConfiguration> permissioningConfiguration,
+      final PantheonController<?> pantheonController,
+      final TransactionSimulator transactionSimulator) {
+
+    if (permissioningConfiguration.isPresent()) {
+      Optional<AccountPermissioningController> accountPermissioningController =
+          AccountPermissioningControllerFactory.create(
+              permissioningConfiguration.get(), transactionSimulator, metricsSystem);
+
+      accountPermissioningController.ifPresent(
+          permissioningController ->
+              pantheonController
+                  .getProtocolSchedule()
+                  .setTransactionFilter(permissioningController::isPermitted));
+
+      return accountPermissioningController;
+    } else {
+      return Optional.empty();
+    }
   }
 
   @VisibleForTesting

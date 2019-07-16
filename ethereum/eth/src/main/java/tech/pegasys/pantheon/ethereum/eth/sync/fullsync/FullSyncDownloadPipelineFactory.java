@@ -27,8 +27,8 @@ import tech.pegasys.pantheon.ethereum.eth.sync.ValidationPolicy;
 import tech.pegasys.pantheon.ethereum.eth.sync.state.SyncTarget;
 import tech.pegasys.pantheon.ethereum.mainnet.HeaderValidationMode;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSchedule;
-import tech.pegasys.pantheon.metrics.MetricCategory;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
+import tech.pegasys.pantheon.metrics.PantheonMetricCategory;
 import tech.pegasys.pantheon.services.pipeline.Pipeline;
 import tech.pegasys.pantheon.services.pipeline.PipelineBuilder;
 
@@ -61,8 +61,8 @@ public class FullSyncDownloadPipelineFactory<C> implements DownloadPipelineFacto
 
   @Override
   public Pipeline<?> createDownloadPipelineForSyncTarget(final SyncTarget target) {
-    final int downloaderParallelism = syncConfig.downloaderParallelism();
-    final int headerRequestSize = syncConfig.downloaderHeaderRequestSize();
+    final int downloaderParallelism = syncConfig.getDownloaderParallelism();
+    final int headerRequestSize = syncConfig.getDownloaderHeaderRequestSize();
     final int singleHeaderBufferSize = headerRequestSize * downloaderParallelism;
     final CheckpointRangeSource checkpointRangeSource =
         new CheckpointRangeSource(
@@ -72,7 +72,7 @@ public class FullSyncDownloadPipelineFactory<C> implements DownloadPipelineFacto
             ethContext.getScheduler(),
             target.peer(),
             target.commonAncestor(),
-            syncConfig.downloaderCheckpointTimeoutsPermitted());
+            syncConfig.getDownloaderCheckpointTimeoutsPermitted());
     final DownloadHeadersStep<C> downloadHeadersStep =
         new DownloadHeadersStep<>(
             protocolSchedule,
@@ -95,7 +95,7 @@ public class FullSyncDownloadPipelineFactory<C> implements DownloadPipelineFacto
             checkpointRangeSource,
             downloaderParallelism,
             metricsSystem.createLabelledCounter(
-                MetricCategory.SYNCHRONIZER,
+                PantheonMetricCategory.SYNCHRONIZER,
                 "chain_download_pipeline_processed_total",
                 "Number of entries process by each chain download pipeline stage",
                 "step",

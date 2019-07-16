@@ -22,15 +22,16 @@ import static org.mockito.Mockito.when;
 import tech.pegasys.pantheon.ethereum.core.SyncStatus;
 import tech.pegasys.pantheon.ethereum.core.Synchronizer;
 import tech.pegasys.pantheon.ethereum.core.Synchronizer.SyncStatusListener;
+import tech.pegasys.pantheon.ethereum.p2p.peers.EnodeURL;
 import tech.pegasys.pantheon.metrics.Counter;
-import tech.pegasys.pantheon.metrics.MetricCategory;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
-import tech.pegasys.pantheon.util.enode.EnodeURL;
+import tech.pegasys.pantheon.metrics.PantheonMetricCategory;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.function.IntSupplier;
 
+import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -74,17 +75,17 @@ public class SyncStatusNodePermissioningProviderTest {
         ArgumentCaptor.forClass(IntSupplier.class);
 
     when(metricsSystem.createCounter(
-            MetricCategory.PERMISSIONING,
+            PantheonMetricCategory.PERMISSIONING,
             "sync_status_node_check_count",
             "Number of times the sync status permissioning provider has been checked"))
         .thenReturn(checkCounter);
     when(metricsSystem.createCounter(
-            MetricCategory.PERMISSIONING,
+            PantheonMetricCategory.PERMISSIONING,
             "sync_status_node_check_count_permitted",
             "Number of times the sync status permissioning provider has been checked and returned permitted"))
         .thenReturn(checkPermittedCounter);
     when(metricsSystem.createCounter(
-            MetricCategory.PERMISSIONING,
+            PantheonMetricCategory.PERMISSIONING,
             "sync_status_node_check_count_unpermitted",
             "Number of times the sync status permissioning provider has been checked and returned unpermitted"))
         .thenReturn(checkUnpermittedCounter);
@@ -92,7 +93,7 @@ public class SyncStatusNodePermissioningProviderTest {
     this.syncStatusListener = captor.getValue();
     verify(metricsSystem)
         .createIntegerGauge(
-            eq(MetricCategory.PERMISSIONING),
+            eq(PantheonMetricCategory.PERMISSIONING),
             eq("sync_status_node_sync_reached"),
             eq("Whether the sync status permissioning provider has realised sync yet"),
             syncGaugeCallbackCaptor.capture());
@@ -186,5 +187,26 @@ public class SyncStatusNodePermissioningProviderTest {
     verify(checkCounter, times(0)).inc();
     verify(checkPermittedCounter, times(0)).inc();
     verify(checkUnpermittedCounter, times(0)).inc();
+  }
+
+  @Test
+  public void syncStatusPermissioningCheckShouldIgnoreEnodeURLDiscoveryPort() {
+    syncStatusListener.onSyncStatus(new SyncStatus(0, 1, 2));
+    assertThat(provider.hasReachedSync()).isFalse();
+
+    final EnodeURL bootnode =
+        EnodeURL.fromString(
+            "enode://6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0@192.168.0.3:5678");
+    final EnodeURL enodeWithDiscoveryPort =
+        EnodeURL.fromString(
+            "enode://6f8a80d14311c39f35f516fa664deaaaa13e85b2f7493f37f6144d86991ec012937307647bd3b9a82abe2974e1407241d54947bbb39763a4cac9f77166ad92a0@192.168.0.3:5678?discport=30303");
+
+    final SyncStatusNodePermissioningProvider provider =
+        new SyncStatusNodePermissioningProvider(
+            synchronizer, Lists.newArrayList(bootnode), metricsSystem);
+
+    boolean isPermitted = provider.isPermitted(enode1, enodeWithDiscoveryPort);
+
+    assertThat(isPermitted).isTrue();
   }
 }

@@ -14,6 +14,7 @@ package tech.pegasys.pantheon.ethereum.jsonrpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static tech.pegasys.pantheon.ethereum.core.InMemoryStorageProvider.createInMemoryBlockchain;
@@ -33,6 +34,7 @@ import tech.pegasys.pantheon.ethereum.core.Transaction;
 import tech.pegasys.pantheon.ethereum.eth.EthProtocol;
 import tech.pegasys.pantheon.ethereum.eth.transactions.PendingTransactions;
 import tech.pegasys.pantheon.ethereum.eth.transactions.TransactionPool;
+import tech.pegasys.pantheon.ethereum.jsonrpc.health.HealthService;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.filter.FilterIdGenerator;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.filter.FilterManager;
 import tech.pegasys.pantheon.ethereum.jsonrpc.internal.filter.FilterRepository;
@@ -44,9 +46,10 @@ import tech.pegasys.pantheon.ethereum.mainnet.MainnetBlockHeaderFunctions;
 import tech.pegasys.pantheon.ethereum.mainnet.MainnetProtocolSchedule;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSchedule;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSpec;
+import tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator.TransactionInvalidReason;
 import tech.pegasys.pantheon.ethereum.mainnet.ValidationResult;
-import tech.pegasys.pantheon.ethereum.p2p.api.P2PNetwork;
-import tech.pegasys.pantheon.ethereum.p2p.wire.Capability;
+import tech.pegasys.pantheon.ethereum.p2p.network.P2PNetwork;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.Capability;
 import tech.pegasys.pantheon.ethereum.util.RawBlockIterator;
 import tech.pegasys.pantheon.ethereum.worldstate.WorldStateArchive;
 import tech.pegasys.pantheon.metrics.noop.NoOpMetricsSystem;
@@ -151,6 +154,9 @@ public abstract class AbstractEthJsonRpcHttpServiceTest {
     final EthHashMiningCoordinator miningCoordinatorMock = mock(EthHashMiningCoordinator.class);
     when(transactionPoolMock.addLocalTransaction(any(Transaction.class)))
         .thenReturn(ValidationResult.valid());
+    // nonce too low tests uses a tx with nonce=16
+    when(transactionPoolMock.addLocalTransaction(argThat(tx -> tx.getNonce() == 16)))
+        .thenReturn(ValidationResult.invalid(TransactionInvalidReason.NONCE_TOO_LOW));
     final PendingTransactions pendingTransactionsMock = mock(PendingTransactions.class);
     when(transactionPoolMock.getPendingTransactions()).thenReturn(pendingTransactionsMock);
     final PrivacyParameters privacyParameters = mock(PrivacyParameters.class);
@@ -199,7 +205,14 @@ public abstract class AbstractEthJsonRpcHttpServiceTest {
     config.setPort(0);
     service =
         new JsonRpcHttpService(
-            vertx, folder.newFolder().toPath(), config, new NoOpMetricsSystem(), methods);
+            vertx,
+            folder.newFolder().toPath(),
+            config,
+            new NoOpMetricsSystem(),
+            Optional.empty(),
+            methods,
+            HealthService.ALWAYS_HEALTHY,
+            HealthService.ALWAYS_HEALTHY);
     service.start().join();
 
     client = new OkHttpClient();

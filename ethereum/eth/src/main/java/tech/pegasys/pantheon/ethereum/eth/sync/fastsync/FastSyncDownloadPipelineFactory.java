@@ -34,8 +34,8 @@ import tech.pegasys.pantheon.ethereum.eth.sync.state.SyncTarget;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSchedule;
 import tech.pegasys.pantheon.metrics.Counter;
 import tech.pegasys.pantheon.metrics.LabelledMetric;
-import tech.pegasys.pantheon.metrics.MetricCategory;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
+import tech.pegasys.pantheon.metrics.PantheonMetricCategory;
 import tech.pegasys.pantheon.services.pipeline.Pipeline;
 import tech.pegasys.pantheon.services.pipeline.PipelineBuilder;
 
@@ -67,22 +67,25 @@ public class FastSyncDownloadPipelineFactory<C> implements DownloadPipelineFacto
     this.metricsSystem = metricsSystem;
     final LabelledMetric<Counter> fastSyncValidationCounter =
         metricsSystem.createLabelledCounter(
-            MetricCategory.SYNCHRONIZER,
+            PantheonMetricCategory.SYNCHRONIZER,
             "fast_sync_validation_mode",
             "Number of blocks validated using light vs full validation during fast sync",
             "validationMode");
     attachedValidationPolicy =
         new FastSyncValidationPolicy(
-            this.syncConfig.fastSyncFullValidationRate(),
+            this.syncConfig.getFastSyncFullValidationRate(),
             LIGHT_SKIP_DETACHED,
             SKIP_DETACHED,
             fastSyncValidationCounter);
     ommerValidationPolicy =
         new FastSyncValidationPolicy(
-            this.syncConfig.fastSyncFullValidationRate(), LIGHT, FULL, fastSyncValidationCounter);
+            this.syncConfig.getFastSyncFullValidationRate(),
+            LIGHT,
+            FULL,
+            fastSyncValidationCounter);
     detachedValidationPolicy =
         new FastSyncValidationPolicy(
-            this.syncConfig.fastSyncFullValidationRate(),
+            this.syncConfig.getFastSyncFullValidationRate(),
             LIGHT_DETACHED_ONLY,
             DETACHED_ONLY,
             fastSyncValidationCounter);
@@ -90,8 +93,8 @@ public class FastSyncDownloadPipelineFactory<C> implements DownloadPipelineFacto
 
   @Override
   public Pipeline<?> createDownloadPipelineForSyncTarget(final SyncTarget target) {
-    final int downloaderParallelism = syncConfig.downloaderParallelism();
-    final int headerRequestSize = syncConfig.downloaderHeaderRequestSize();
+    final int downloaderParallelism = syncConfig.getDownloaderParallelism();
+    final int headerRequestSize = syncConfig.getDownloaderHeaderRequestSize();
     final int singleHeaderBufferSize = headerRequestSize * downloaderParallelism;
     final CheckpointRangeSource checkpointRangeSource =
         new CheckpointRangeSource(
@@ -105,7 +108,7 @@ public class FastSyncDownloadPipelineFactory<C> implements DownloadPipelineFacto
             ethContext.getScheduler(),
             target.peer(),
             target.commonAncestor(),
-            syncConfig.downloaderCheckpointTimeoutsPermitted());
+            syncConfig.getDownloaderCheckpointTimeoutsPermitted());
     final DownloadHeadersStep<C> downloadHeadersStep =
         new DownloadHeadersStep<>(
             protocolSchedule,
@@ -130,7 +133,7 @@ public class FastSyncDownloadPipelineFactory<C> implements DownloadPipelineFacto
             checkpointRangeSource,
             downloaderParallelism,
             metricsSystem.createLabelledCounter(
-                MetricCategory.SYNCHRONIZER,
+                PantheonMetricCategory.SYNCHRONIZER,
                 "chain_download_pipeline_processed_total",
                 "Number of entries process by each chain download pipeline stage",
                 "step",

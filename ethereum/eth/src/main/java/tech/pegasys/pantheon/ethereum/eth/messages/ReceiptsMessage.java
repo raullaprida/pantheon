@@ -13,8 +13,8 @@
 package tech.pegasys.pantheon.ethereum.eth.messages;
 
 import tech.pegasys.pantheon.ethereum.core.TransactionReceipt;
-import tech.pegasys.pantheon.ethereum.p2p.api.MessageData;
-import tech.pegasys.pantheon.ethereum.p2p.wire.AbstractMessageData;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.AbstractMessageData;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.MessageData;
 import tech.pegasys.pantheon.ethereum.rlp.BytesValueRLPInput;
 import tech.pegasys.pantheon.ethereum.rlp.BytesValueRLPOutput;
 import tech.pegasys.pantheon.ethereum.rlp.RLPInput;
@@ -67,7 +67,7 @@ public final class ReceiptsMessage extends AbstractMessageData {
       final int setSize = input.enterList();
       final List<TransactionReceipt> receiptSet = new ArrayList<>(setSize);
       for (int i = 0; i < setSize; i++) {
-        receiptSet.add(TransactionReceipt.readFrom(input));
+        receiptSet.add(TransactionReceipt.readFrom(input, false));
       }
       input.leaveList();
       receipts.add(receiptSet);

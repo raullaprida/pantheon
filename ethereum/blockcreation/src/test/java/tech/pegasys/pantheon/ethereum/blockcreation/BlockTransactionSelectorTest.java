@@ -14,6 +14,7 @@ package tech.pegasys.pantheon.ethereum.blockcreation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -36,13 +37,14 @@ import tech.pegasys.pantheon.ethereum.core.WorldState;
 import tech.pegasys.pantheon.ethereum.core.WorldUpdater;
 import tech.pegasys.pantheon.ethereum.difficulty.fixed.FixedDifficultyProtocolSchedule;
 import tech.pegasys.pantheon.ethereum.eth.transactions.PendingTransactions;
+import tech.pegasys.pantheon.ethereum.eth.transactions.TransactionPoolConfiguration;
 import tech.pegasys.pantheon.ethereum.mainnet.MainnetTransactionProcessor;
 import tech.pegasys.pantheon.ethereum.mainnet.MainnetTransactionProcessor.Result;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSchedule;
 import tech.pegasys.pantheon.ethereum.mainnet.TransactionProcessor;
 import tech.pegasys.pantheon.ethereum.mainnet.TransactionValidator.TransactionInvalidReason;
 import tech.pegasys.pantheon.ethereum.mainnet.ValidationResult;
-import tech.pegasys.pantheon.ethereum.storage.keyvalue.KeyValueStorageWorldStateStorage;
+import tech.pegasys.pantheon.ethereum.storage.keyvalue.WorldStateKeyValueStorage;
 import tech.pegasys.pantheon.ethereum.vm.TestBlockchain;
 import tech.pegasys.pantheon.ethereum.worldstate.DefaultMutableWorldState;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
@@ -55,6 +57,7 @@ import tech.pegasys.pantheon.util.uint.UInt256;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import com.google.common.collect.Lists;
@@ -67,7 +70,10 @@ public class BlockTransactionSelectorTest {
 
   private final PendingTransactions pendingTransactions =
       new PendingTransactions(
-          PendingTransactions.DEFAULT_TX_RETENTION_HOURS, 5, TestClock.fixed(), metricsSystem);
+          TransactionPoolConfiguration.DEFAULT_TX_RETENTION_HOURS,
+          5,
+          TestClock.fixed(),
+          metricsSystem);
   private final Blockchain blockchain = new TestBlockchain();
   private final DefaultMutableWorldState worldState = inMemoryWorldState();
   private final Supplier<Boolean> isCancelled = () -> false;
@@ -122,8 +128,10 @@ public class BlockTransactionSelectorTest {
     pendingTransactions.addRemoteTransaction(transaction);
 
     when(transactionProcessor.processTransaction(
-            any(), any(), any(), eq(transaction), any(), any(), any()))
-        .thenReturn(MainnetTransactionProcessor.Result.failed(5, ValidationResult.valid()));
+            any(), any(), any(), eq(transaction), any(), any(), anyBoolean(), any()))
+        .thenReturn(
+            MainnetTransactionProcessor.Result.failed(
+                5, ValidationResult.valid(), Optional.empty()));
 
     // The block should fit 3 transactions only
     final ProcessableBlockHeader blockHeader = createBlockWithGasLimit(5000);
@@ -160,7 +168,8 @@ public class BlockTransactionSelectorTest {
       pendingTransactions.addRemoteTransaction(tx);
     }
 
-    when(transactionProcessor.processTransaction(any(), any(), any(), any(), any(), any(), any()))
+    when(transactionProcessor.processTransaction(
+            any(), any(), any(), any(), any(), any(), anyBoolean(), any()))
         .thenReturn(
             MainnetTransactionProcessor.Result.successful(
                 new LogSeries(Lists.newArrayList()),
@@ -168,7 +177,14 @@ public class BlockTransactionSelectorTest {
                 BytesValue.EMPTY,
                 ValidationResult.valid()));
     when(transactionProcessor.processTransaction(
-            any(), any(), any(), eq(transactionsToInject.get(1)), any(), any(), any()))
+            any(),
+            any(),
+            any(),
+            eq(transactionsToInject.get(1)),
+            any(),
+            any(),
+            anyBoolean(),
+            any()))
         .thenReturn(
             MainnetTransactionProcessor.Result.invalid(ValidationResult.invalid(NONCE_TOO_LOW)));
 
@@ -208,7 +224,8 @@ public class BlockTransactionSelectorTest {
       pendingTransactions.addRemoteTransaction(tx);
     }
 
-    when(transactionProcessor.processTransaction(any(), any(), any(), any(), any(), any(), any()))
+    when(transactionProcessor.processTransaction(
+            any(), any(), any(), any(), any(), any(), anyBoolean(), any()))
         .thenReturn(
             MainnetTransactionProcessor.Result.successful(
                 new LogSeries(Lists.newArrayList()),
@@ -278,7 +295,8 @@ public class BlockTransactionSelectorTest {
   public void transactionTooLargeForBlockDoesNotPreventMoreBeingAddedIfBlockOccupancyNotReached() {
     final ProcessableBlockHeader blockHeader = createBlockWithGasLimit(300);
 
-    when(transactionProcessor.processTransaction(any(), any(), any(), any(), any(), any(), any()))
+    when(transactionProcessor.processTransaction(
+            any(), any(), any(), any(), any(), any(), anyBoolean(), any()))
         .thenReturn(
             MainnetTransactionProcessor.Result.successful(
                 new LogSeries(Lists.newArrayList()),
@@ -334,7 +352,8 @@ public class BlockTransactionSelectorTest {
     final ProcessableBlockHeader blockHeader = createBlockWithGasLimit(300);
 
     // TransactionProcessor mock assumes all gas in the transaction was used (i.e. gasLimit).
-    when(transactionProcessor.processTransaction(any(), any(), any(), any(), any(), any(), any()))
+    when(transactionProcessor.processTransaction(
+            any(), any(), any(), any(), any(), any(), anyBoolean(), any()))
         .thenReturn(
             MainnetTransactionProcessor.Result.successful(
                 new LogSeries(Lists.newArrayList()),
@@ -429,6 +448,7 @@ public class BlockTransactionSelectorTest {
             eq(validTransaction),
             any(),
             any(),
+            anyBoolean(),
             any()))
         .thenReturn(
             Result.successful(
@@ -440,6 +460,7 @@ public class BlockTransactionSelectorTest {
             eq(invalidTransaction),
             any(),
             any(),
+            anyBoolean(),
             any()))
         .thenReturn(
             Result.invalid(
@@ -468,6 +489,7 @@ public class BlockTransactionSelectorTest {
             eq(futureTransaction),
             any(),
             any(),
+            anyBoolean(),
             any()))
         .thenReturn(
             Result.invalid(ValidationResult.invalid(TransactionInvalidReason.INCORRECT_NONCE)));
@@ -508,11 +530,12 @@ public class BlockTransactionSelectorTest {
   // This is a duplicate of the MainnetProtocolSpec::frontierTransactionReceiptFactory
   private TransactionReceipt createReceipt(
       final TransactionProcessor.Result result, final WorldState worldState, final long gasUsed) {
-    return new TransactionReceipt(worldState.rootHash(), gasUsed, Lists.newArrayList());
+    return new TransactionReceipt(
+        worldState.rootHash(), gasUsed, Lists.newArrayList(), Optional.empty());
   }
 
   private DefaultMutableWorldState inMemoryWorldState() {
     return new DefaultMutableWorldState(
-        new KeyValueStorageWorldStateStorage(new InMemoryKeyValueStorage()));
+        new WorldStateKeyValueStorage(new InMemoryKeyValueStorage()));
   }
 }

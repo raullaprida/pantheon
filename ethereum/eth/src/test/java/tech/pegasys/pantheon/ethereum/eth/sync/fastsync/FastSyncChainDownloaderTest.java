@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static tech.pegasys.pantheon.ethereum.mainnet.HeaderValidationMode.LIGHT_SKIP_DETACHED;
-import static tech.pegasys.pantheon.ethereum.p2p.wire.messages.DisconnectMessage.DisconnectReason.TOO_MANY_PEERS;
+import static tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.messages.DisconnectMessage.DisconnectReason.TOO_MANY_PEERS;
 
 import tech.pegasys.pantheon.ethereum.ProtocolContext;
 import tech.pegasys.pantheon.ethereum.chain.Blockchain;
@@ -171,7 +171,7 @@ public class FastSyncChainDownloaderTest {
         SynchronizerConfiguration.builder()
             .downloaderChainSegmentSize(5)
             .downloaderHeadersRequestSize(3)
-            .downloaderParallelisim(1)
+            .downloaderParallelism(1)
             .build();
     final long pivotBlockNumber = 25;
     final ChainDownloader downloader = downloader(syncConfig, pivotBlockNumber);

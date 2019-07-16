@@ -25,6 +25,8 @@ import tech.pegasys.pantheon.ethereum.vm.BlockHashLookup;
 import tech.pegasys.pantheon.ethereum.vm.OperationTracer;
 import tech.pegasys.pantheon.util.bytes.BytesValue;
 
+import java.util.Optional;
+
 /** Processes transactions. */
 public interface TransactionProcessor {
 
@@ -95,6 +97,13 @@ public interface TransactionProcessor {
      * @return the validation result, with the reason for failure (if applicable.)
      */
     ValidationResult<TransactionInvalidReason> getValidationResult();
+
+    /**
+     * Returns the reason why a transaction was reverted (if applicable).
+     *
+     * @return the revert reason.
+     */
+    Optional<String> getRevertReason();
   }
 
   /**
@@ -107,7 +116,11 @@ public interface TransactionProcessor {
    * @param miningBeneficiary The address which is to receive the transaction fee
    * @param blockHashLookup The {@link BlockHashLookup} to use for BLOCKHASH operations
    * @param isPersistingState Whether the state will be modified by this process
+   * @param transactionValidationParams Validation parameters that will be used by the {@link
+   *     TransactionValidator}
    * @return the transaction result
+   * @see TransactionValidator
+   * @see TransactionValidationParams
    */
   default Result processTransaction(
       final Blockchain blockchain,
@@ -116,7 +129,8 @@ public interface TransactionProcessor {
       final Transaction transaction,
       final Address miningBeneficiary,
       final BlockHashLookup blockHashLookup,
-      final Boolean isPersistingState) {
+      final Boolean isPersistingState,
+      final TransactionValidationParams transactionValidationParams) {
     return processTransaction(
         blockchain,
         worldState,
@@ -125,7 +139,8 @@ public interface TransactionProcessor {
         miningBeneficiary,
         NO_TRACING,
         blockHashLookup,
-        isPersistingState);
+        isPersistingState,
+        transactionValidationParams);
   }
 
   /**
@@ -141,6 +156,27 @@ public interface TransactionProcessor {
    * @param isPersistingState Whether the state will be modified by this process
    * @return the transaction result
    */
+  default Result processTransaction(
+      final Blockchain blockchain,
+      final WorldUpdater worldState,
+      final ProcessableBlockHeader blockHeader,
+      final Transaction transaction,
+      final Address miningBeneficiary,
+      final OperationTracer operationTracer,
+      final BlockHashLookup blockHashLookup,
+      final Boolean isPersistingState) {
+    return processTransaction(
+        blockchain,
+        worldState,
+        blockHeader,
+        transaction,
+        miningBeneficiary,
+        operationTracer,
+        blockHashLookup,
+        isPersistingState,
+        new TransactionValidationParams.Builder().build());
+  }
+
   Result processTransaction(
       Blockchain blockchain,
       WorldUpdater worldState,
@@ -149,5 +185,6 @@ public interface TransactionProcessor {
       Address miningBeneficiary,
       OperationTracer operationTracer,
       BlockHashLookup blockHashLookup,
-      Boolean isPersistingState);
+      Boolean isPersistingState,
+      TransactionValidationParams transactionValidationParams);
 }

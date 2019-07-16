@@ -19,17 +19,17 @@ import tech.pegasys.pantheon.ethereum.chain.MinedBlockObserver;
 import tech.pegasys.pantheon.ethereum.core.Block;
 import tech.pegasys.pantheon.ethereum.core.Hash;
 import tech.pegasys.pantheon.ethereum.eth.EthProtocol;
-import tech.pegasys.pantheon.ethereum.eth.EthereumWireProtocolConfiguration;
+import tech.pegasys.pantheon.ethereum.eth.EthProtocolConfiguration;
 import tech.pegasys.pantheon.ethereum.eth.messages.EthPV62;
 import tech.pegasys.pantheon.ethereum.eth.messages.StatusMessage;
 import tech.pegasys.pantheon.ethereum.eth.sync.BlockBroadcaster;
-import tech.pegasys.pantheon.ethereum.p2p.api.Message;
-import tech.pegasys.pantheon.ethereum.p2p.api.MessageData;
-import tech.pegasys.pantheon.ethereum.p2p.api.PeerConnection;
-import tech.pegasys.pantheon.ethereum.p2p.api.PeerConnection.PeerNotConnected;
-import tech.pegasys.pantheon.ethereum.p2p.api.ProtocolManager;
-import tech.pegasys.pantheon.ethereum.p2p.wire.Capability;
-import tech.pegasys.pantheon.ethereum.p2p.wire.messages.DisconnectMessage.DisconnectReason;
+import tech.pegasys.pantheon.ethereum.p2p.network.ProtocolManager;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.connections.PeerConnection;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.connections.PeerConnection.PeerNotConnected;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.Capability;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.Message;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.MessageData;
+import tech.pegasys.pantheon.ethereum.p2p.rlpx.wire.messages.DisconnectMessage.DisconnectReason;
 import tech.pegasys.pantheon.ethereum.rlp.RLPException;
 import tech.pegasys.pantheon.ethereum.worldstate.WorldStateArchive;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
@@ -72,7 +72,7 @@ public class EthProtocolManager implements ProtocolManager, MinedBlockObserver {
       final int networkId,
       final boolean fastSyncEnabled,
       final EthScheduler scheduler,
-      final EthereumWireProtocolConfiguration ethereumWireProtocolConfiguration,
+      final EthProtocolConfiguration ethereumWireProtocolConfiguration,
       final Clock clock,
       final MetricsSystem metricsSystem) {
     this.networkId = networkId;
@@ -109,7 +109,7 @@ public class EthProtocolManager implements ProtocolManager, MinedBlockObserver {
         networkId,
         fastSyncEnabled,
         new EthScheduler(syncWorkers, txWorkers, computationWorkers, metricsSystem),
-        EthereumWireProtocolConfiguration.defaultConfig(),
+        EthProtocolConfiguration.defaultConfig(),
         clock,
         metricsSystem);
   }
@@ -124,7 +124,7 @@ public class EthProtocolManager implements ProtocolManager, MinedBlockObserver {
       final int computationWorkers,
       final Clock clock,
       final MetricsSystem metricsSystem,
-      final EthereumWireProtocolConfiguration ethereumWireProtocolConfiguration) {
+      final EthProtocolConfiguration ethereumWireProtocolConfiguration) {
     this(
         blockchain,
         worldStateArchive,

@@ -12,35 +12,22 @@
  */
 package tech.pegasys.pantheon.ethereum.p2p.config;
 
-import tech.pegasys.pantheon.ethereum.p2p.wire.SubProtocol;
+import static com.google.common.base.Preconditions.checkArgument;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 import java.util.Objects;
 
 public class NetworkingConfiguration {
-  private List<SubProtocol> supportedProtocols = Collections.emptyList();
+  public static final int DEFAULT_INITIATE_CONNECTIONS_FREQUENCY_SEC = 30;
+  public static final int DEFAULT_CHECK_MAINTAINED_CONNECTSION_FREQUENCY_SEC = 60;
+
   private DiscoveryConfiguration discovery = new DiscoveryConfiguration();
   private RlpxConfiguration rlpx = new RlpxConfiguration();
-  private String clientId = "";
+  private int initiateConnectionsFrequencySec = DEFAULT_INITIATE_CONNECTIONS_FREQUENCY_SEC;
+  private int checkMaintainedConnectionsFrequencySec =
+      DEFAULT_CHECK_MAINTAINED_CONNECTSION_FREQUENCY_SEC;
 
   public static NetworkingConfiguration create() {
     return new NetworkingConfiguration();
-  }
-
-  public List<SubProtocol> getSupportedProtocols() {
-    return supportedProtocols;
-  }
-
-  public NetworkingConfiguration setSupportedProtocols(final List<SubProtocol> supportedProtocols) {
-    this.supportedProtocols = supportedProtocols;
-    return this;
-  }
-
-  public NetworkingConfiguration setSupportedProtocols(final SubProtocol... supportedProtocols) {
-    this.supportedProtocols = Arrays.asList(supportedProtocols);
-    return this;
   }
 
   public DiscoveryConfiguration getDiscovery() {
@@ -61,12 +48,25 @@ public class NetworkingConfiguration {
     return this;
   }
 
-  public String getClientId() {
-    return clientId;
+  public int getInitiateConnectionsFrequencySec() {
+    return initiateConnectionsFrequencySec;
   }
 
-  public NetworkingConfiguration setClientId(final String clientId) {
-    this.clientId = clientId;
+  public NetworkingConfiguration setInitiateConnectionsFrequency(
+      final int initiateConnectionsFrequency) {
+    checkArgument(initiateConnectionsFrequency > 0);
+    this.initiateConnectionsFrequencySec = initiateConnectionsFrequency;
+    return this;
+  }
+
+  public int getCheckMaintainedConnectionsFrequencySec() {
+    return checkMaintainedConnectionsFrequencySec;
+  }
+
+  public NetworkingConfiguration setCheckMaintainedConnectionsFrequency(
+      final int checkMaintainedConnectionsFrequency) {
+    checkArgument(checkMaintainedConnectionsFrequency > 0);
+    this.checkMaintainedConnectionsFrequencySec = checkMaintainedConnectionsFrequency;
     return this;
   }
 

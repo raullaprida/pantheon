@@ -20,6 +20,7 @@ import tech.pegasys.pantheon.ethereum.core.PrivacyParameters;
 import tech.pegasys.pantheon.ethereum.jsonrpc.JsonRpcConfiguration;
 import tech.pegasys.pantheon.ethereum.jsonrpc.RpcApis;
 import tech.pegasys.pantheon.ethereum.jsonrpc.websocket.WebSocketConfiguration;
+import tech.pegasys.pantheon.ethereum.p2p.config.NetworkingConfiguration;
 import tech.pegasys.pantheon.ethereum.permissioning.PermissioningConfiguration;
 import tech.pegasys.pantheon.metrics.prometheus.MetricsConfiguration;
 import tech.pegasys.pantheon.tests.acceptance.dsl.node.configuration.genesis.GenesisConfigurationProvider;
@@ -39,16 +40,24 @@ public class PantheonFactoryConfigurationBuilder {
   private PrivacyParameters privacyParameters = PrivacyParameters.DEFAULT;
   private JsonRpcConfiguration jsonRpcConfiguration = JsonRpcConfiguration.createDefault();
   private WebSocketConfiguration webSocketConfiguration = WebSocketConfiguration.createDefault();
-  private MetricsConfiguration metricsConfiguration = MetricsConfiguration.createDefault();
+  private MetricsConfiguration metricsConfiguration = MetricsConfiguration.builder().build();
   private Optional<PermissioningConfiguration> permissioningConfiguration = Optional.empty();
   private Optional<String> keyFilePath = Optional.empty();
   private boolean devMode = true;
   private GenesisConfigurationProvider genesisConfigProvider = ignore -> Optional.empty();
   private Boolean p2pEnabled = true;
+  private NetworkingConfiguration networkingConfiguration = NetworkingConfiguration.create();
   private boolean discoveryEnabled = true;
   private boolean bootnodeEligible = true;
+  private boolean revertReasonEnabled = false;
   private List<String> plugins = new ArrayList<>();
   private List<String> extraCLIOptions = new ArrayList<>();
+
+  public PantheonFactoryConfigurationBuilder() {
+    // Check connections more frequently during acceptance tests to cut down on
+    // intermittent failures due to the fact that we're running over a real network
+    networkingConfiguration.setInitiateConnectionsFrequency(5);
+  }
 
   public PantheonFactoryConfigurationBuilder name(final String name) {
     this.name = name;
@@ -179,6 +188,11 @@ public class PantheonFactoryConfigurationBuilder {
     return this;
   }
 
+  public PantheonFactoryConfigurationBuilder revertReasonEnabled() {
+    this.revertReasonEnabled = true;
+    return this;
+  }
+
   public PantheonFactoryConfiguration build() {
     return new PantheonFactoryConfiguration(
         name,
@@ -192,8 +206,10 @@ public class PantheonFactoryConfigurationBuilder {
         devMode,
         genesisConfigProvider,
         p2pEnabled,
+        networkingConfiguration,
         discoveryEnabled,
         bootnodeEligible,
+        revertReasonEnabled,
         plugins,
         extraCLIOptions);
   }

@@ -14,11 +14,11 @@ package tech.pegasys.pantheon;
 
 import static java.util.Collections.emptySet;
 import static org.assertj.core.api.Assertions.assertThat;
-import static tech.pegasys.pantheon.cli.EthNetworkConfig.DEV_NETWORK_ID;
-import static tech.pegasys.pantheon.cli.NetworkName.DEV;
+import static tech.pegasys.pantheon.cli.config.EthNetworkConfig.DEV_NETWORK_ID;
+import static tech.pegasys.pantheon.cli.config.NetworkName.DEV;
 import static tech.pegasys.pantheon.controller.KeyPairUtil.loadKeyPair;
 
-import tech.pegasys.pantheon.cli.EthNetworkConfig;
+import tech.pegasys.pantheon.cli.config.EthNetworkConfig;
 import tech.pegasys.pantheon.config.GenesisConfigFile;
 import tech.pegasys.pantheon.controller.MainnetPantheonControllerBuilder;
 import tech.pegasys.pantheon.controller.PantheonController;
@@ -30,16 +30,17 @@ import tech.pegasys.pantheon.ethereum.core.BlockSyncTestUtils;
 import tech.pegasys.pantheon.ethereum.core.InMemoryStorageProvider;
 import tech.pegasys.pantheon.ethereum.core.MiningParametersTestBuilder;
 import tech.pegasys.pantheon.ethereum.core.PrivacyParameters;
-import tech.pegasys.pantheon.ethereum.eth.EthereumWireProtocolConfiguration;
+import tech.pegasys.pantheon.ethereum.eth.EthProtocolConfiguration;
 import tech.pegasys.pantheon.ethereum.eth.sync.SyncMode;
 import tech.pegasys.pantheon.ethereum.eth.sync.SynchronizerConfiguration;
-import tech.pegasys.pantheon.ethereum.eth.transactions.PendingTransactions;
+import tech.pegasys.pantheon.ethereum.eth.transactions.TransactionPoolConfiguration;
 import tech.pegasys.pantheon.ethereum.graphql.GraphQLConfiguration;
 import tech.pegasys.pantheon.ethereum.jsonrpc.JsonRpcConfiguration;
 import tech.pegasys.pantheon.ethereum.jsonrpc.websocket.WebSocketConfiguration;
 import tech.pegasys.pantheon.ethereum.mainnet.HeaderValidationMode;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSchedule;
 import tech.pegasys.pantheon.ethereum.mainnet.ProtocolSpec;
+import tech.pegasys.pantheon.ethereum.p2p.peers.EnodeURL;
 import tech.pegasys.pantheon.ethereum.storage.StorageProvider;
 import tech.pegasys.pantheon.ethereum.storage.keyvalue.RocksDbStorageProvider;
 import tech.pegasys.pantheon.metrics.MetricsSystem;
@@ -47,7 +48,6 @@ import tech.pegasys.pantheon.metrics.noop.NoOpMetricsSystem;
 import tech.pegasys.pantheon.metrics.prometheus.MetricsConfiguration;
 import tech.pegasys.pantheon.services.kvstore.RocksDbConfiguration;
 import tech.pegasys.pantheon.testutil.TestClock;
-import tech.pegasys.pantheon.util.enode.EnodeURL;
 import tech.pegasys.pantheon.util.uint.UInt256;
 
 import java.io.IOException;
@@ -124,7 +124,7 @@ public final class RunnerTest {
         new MainnetPantheonControllerBuilder()
             .genesisConfigFile(GenesisConfigFile.mainnet())
             .synchronizerConfiguration(syncConfigAhead)
-            .ethereumWireProtocolConfiguration(EthereumWireProtocolConfiguration.defaultConfig())
+            .ethProtocolConfiguration(EthProtocolConfiguration.defaultConfig())
             .dataDirectory(dataDirAhead)
             .networkId(networkId)
             .miningParameters(new MiningParametersTestBuilder().enabled(false).build())
@@ -132,9 +132,8 @@ public final class RunnerTest {
             .metricsSystem(noOpMetricsSystem)
             .privacyParameters(PrivacyParameters.DEFAULT)
             .clock(TestClock.fixed())
-            .maxPendingTransactions(PendingTransactions.MAX_PENDING_TRANSACTIONS)
+            .transactionPoolConfiguration(TransactionPoolConfiguration.builder().build())
             .storageProvider(createKeyValueStorageProvider(dbAhead))
-            .pendingTransactionRetentionPeriod(PendingTransactions.DEFAULT_TX_RETENTION_HOURS)
             .build()) {
       setupState(blockCount, controller.getProtocolSchedule(), controller.getProtocolContext());
     }
@@ -144,7 +143,7 @@ public final class RunnerTest {
         new MainnetPantheonControllerBuilder()
             .genesisConfigFile(GenesisConfigFile.mainnet())
             .synchronizerConfiguration(syncConfigAhead)
-            .ethereumWireProtocolConfiguration(EthereumWireProtocolConfiguration.defaultConfig())
+            .ethProtocolConfiguration(EthProtocolConfiguration.defaultConfig())
             .dataDirectory(dataDirAhead)
             .networkId(networkId)
             .miningParameters(new MiningParametersTestBuilder().enabled(false).build())
@@ -152,9 +151,8 @@ public final class RunnerTest {
             .metricsSystem(noOpMetricsSystem)
             .privacyParameters(PrivacyParameters.DEFAULT)
             .clock(TestClock.fixed())
-            .maxPendingTransactions(PendingTransactions.MAX_PENDING_TRANSACTIONS)
+            .transactionPoolConfiguration(TransactionPoolConfiguration.builder().build())
             .storageProvider(createKeyValueStorageProvider(dbAhead))
-            .pendingTransactionRetentionPeriod(PendingTransactions.DEFAULT_TX_RETENTION_HOURS)
             .build();
     final String listenHost = InetAddress.getLoopbackAddress().getHostAddress();
     final JsonRpcConfiguration aheadJsonRpcConfiguration = jsonRpcConfiguration();
@@ -203,7 +201,7 @@ public final class RunnerTest {
           new MainnetPantheonControllerBuilder()
               .genesisConfigFile(GenesisConfigFile.mainnet())
               .synchronizerConfiguration(syncConfigBehind)
-              .ethereumWireProtocolConfiguration(EthereumWireProtocolConfiguration.defaultConfig())
+              .ethProtocolConfiguration(EthProtocolConfiguration.defaultConfig())
               .dataDirectory(dataDirBehind)
               .networkId(networkId)
               .miningParameters(new MiningParametersTestBuilder().enabled(false).build())
@@ -212,8 +210,7 @@ public final class RunnerTest {
               .metricsSystem(noOpMetricsSystem)
               .privacyParameters(PrivacyParameters.DEFAULT)
               .clock(TestClock.fixed())
-              .maxPendingTransactions(PendingTransactions.MAX_PENDING_TRANSACTIONS)
-              .pendingTransactionRetentionPeriod(PendingTransactions.DEFAULT_TX_RETENTION_HOURS)
+              .transactionPoolConfiguration(TransactionPoolConfiguration.builder().build())
               .build();
       final EnodeURL enode = runnerAhead.getLocalEnode().get();
       final EthNetworkConfig behindEthNetworkConfiguration =
@@ -333,7 +330,7 @@ public final class RunnerTest {
 
   private StorageProvider createKeyValueStorageProvider(final Path dbAhead) throws IOException {
     return RocksDbStorageProvider.create(
-        new RocksDbConfiguration.Builder().databaseDir(dbAhead).build(), new NoOpMetricsSystem());
+        RocksDbConfiguration.builder().databaseDir(dbAhead).build(), new NoOpMetricsSystem());
   }
 
   private JsonRpcConfiguration jsonRpcConfiguration() {
@@ -360,10 +357,7 @@ public final class RunnerTest {
   }
 
   private MetricsConfiguration metricsConfiguration() {
-    final MetricsConfiguration configuration = MetricsConfiguration.createDefault();
-    configuration.setPort(0);
-    configuration.setEnabled(false);
-    return configuration;
+    return MetricsConfiguration.builder().enabled(false).port(0).build();
   }
 
   private static void setupState(
